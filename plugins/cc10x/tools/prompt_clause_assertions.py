@@ -70,6 +70,22 @@ def matches(pattern: str):
     return lambda text: re.search(pattern, text) is not None
 
 
+def has_sentence(text: str, sentence: str) -> bool:
+    """The sentence stands whole: it starts the text, a line, a table cell or follows a period, and ends at its own period."""
+    return re.search(r"(?:^|(?<=\n)|(?<=\. )|(?<=\| ))" + re.escape(sentence) + r"(?=\s|$)", text) is not None
+
+
+# Tighter loops P1: what makes a phase table hollow, stated identically in plan-gap-reviewer and plan-review-gate.
+PHASE_TABLE_SENTENCES = (
+    "A table heading with no data rows, or with a row that still holds bracketed template placeholder text such as `[outcome]`, is BLOCKING.",
+    "`N/A` under `#### Failure modes` or `#### Touched surfaces` is BLOCKING.",
+    "`N/A: <reason>` is accepted only for Input space, and only on a phase that adds or changes no guard, parser, classifier or validator.",
+    "A Touched surfaces table with no `Sweep:` command line is BLOCKING.",
+    "A Touched surfaces table that omits a surface named in the phase's own Files/surfaces list is BLOCKING.",
+    "A sweep hit listed as `checked, unchanged` with a short reason satisfies the sweep rule.",
+)
+
+
 def skill_description(text: str) -> str:
     """The frontmatter `description` value (quoted, block or folded scalar) as one whitespace-normalized string."""
     block = re.match(r"---\n(.*?)\n---", text, re.S)
@@ -3976,7 +3992,9 @@ ASSERTIONS = [
             for h in ("`#### Input space`", "`#### Failure modes`", "`#### Touched surfaces`", "`N/A: <reason>`", "PLAN-route plans only")
         )
         and "guard, parser, classifier or validator" in m.group(0)
-        and "`qa-plan`, `qa-re-plan`" in m.group(0),
+        and "`qa-plan`, `qa-re-plan`" in m.group(0)
+        and has_sentence(m.group(0), "Failure modes and Touched surfaces are never `N/A`.")
+        and has_sentence(m.group(0), "A sweep hit that needs no change is listed as `checked, unchanged` with a short reason."),
         "tighter loops P1 (D14): every PLAN-route phase carries Input space, Failure modes and Touched surfaces; QA artifacts do not",
     ),
     A(
@@ -3986,8 +4004,16 @@ ASSERTIONS = [
         and all(h in m.group(0) for h in ("#### Input space", "#### Failure modes", "#### Touched surfaces", "`N/A: <reason>`"))
         and "Scan the plan against these 11 checks." in text
         and "these 10 checks" not in text
-        and re.search(r"\n11\. Every phase of a PLAN-route plan carries `#### Input space`, `#### Failure modes` and `#### Touched surfaces`", text) is not None,
-        "tighter loops P1 (D14): the template and the completeness gate carry the phase tables",
+        and re.search(r"\n11\. Every phase of a PLAN-route plan carries `#### Input space`, `#### Failure modes` and `#### Touched surfaces`", text) is not None
+        and "\nSweep: `command grep -rnIiE" in m.group(0)
+        and "| checked, unchanged: [short reason] |" in m.group(0)
+        and has_sentence(m.group(0), "Failure modes and Touched surfaces are never `N/A`.")
+        and has_sentence(m.group(0), "A sweep hit that needs no change is listed as `checked, unchanged` with a short reason.")
+        and (g := re.search(r"\n11\. [^\n]*", text)) is not None
+        and "a `Sweep:` line" in g.group(0)
+        and "every surface in the phase's Files/surfaces list" in g.group(0)
+        and "`checked, unchanged`" in g.group(0),
+        "tighter loops P1 (D14): the template and the completeness gate carry the phase tables, a Sweep line and a checked-unchanged row",
     ),
     A(
         "plan-gap-reviewer: a missing or incomplete phase table is BLOCKING missing_surfaces; QA-route plans exempt",
@@ -4003,8 +4029,9 @@ ASSERTIONS = [
                 "QA-route plans (`qa-plan-review`, `qa-plan-review-2`) are exempt",
             )
         )
+        and all(has_sentence(m.group(0), s) for s in PHASE_TABLE_SENTENCES)
         and "`missing_surfaces`: Phase 3 changes a validator but its `#### Input space` reads `N/A: docs only`" in text,
-        "tighter loops P1 (D14): the reviewer fails a PLAN-route plan that lacks a phase table, without a new bucket",
+        "tighter loops P1 (D14): the reviewer fails a PLAN-route plan that lacks a phase table or carries a hollow one, without a new bucket",
     ),
     A(
         "plan-gap-reviewer: FINDING_BUCKETS keys unchanged",
@@ -4029,8 +4056,10 @@ ASSERTIONS = [
             r"\n\| Phase tables present \|[^\n]*`#### Input space`, `#### Failure modes` and `#### Touched surfaces`[^\n]*\|[^\n]*Not blocking for `qa-plan` and `qa-re-plan` artifacts[^\n]*\|\n",
             m.group(0),
         )
-        is not None,
-        "tighter loops P1 (D14): the gate the planner runs fails a PLAN-route plan without phase tables and exempts QA artifacts",
+        is not None
+        and (row := re.search(r"\n\| Phase tables present \|[^\n]*\n", m.group(0))) is not None
+        and all(has_sentence(row.group(0), s) for s in PHASE_TABLE_SENTENCES),
+        "tighter loops P1 (D14): the gate the planner runs fails a PLAN-route plan without phase tables or with hollow ones, and exempts QA artifacts",
     ),
     A(
         "build-workflow: step 13 handoff includes the phase tables when the plan has them",

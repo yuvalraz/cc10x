@@ -78,12 +78,13 @@ Sweep: `command grep -rnIiE "<pattern>" <paths>`
 
 | Surface | Kind | Action |
 |---|---|---|
-| [every file the sweep finds] | [producer, consumer, checker, doc] | [update, or unchanged with the reason] |
+| [each surface in Files/Surfaces, and each sweep hit that changes] | [producer, consumer, checker, doc] | [update: what changes] |
+| [a sweep hit that needs no change] | [kind] | checked, unchanged: [short reason] |
 ```
 
 If no Consumes/Produces: write `Consumes: none` / `Produces: none` explicitly.
 
-The three tables are required on every phase of a PLAN-route plan; QA-route plans do not carry them. Input space may be the single line `N/A: <reason>` when the task adds or changes no guard, parser, classifier or validator.
+The three tables are required on every phase of a PLAN-route plan; QA-route plans do not carry them. Input space may be the single line `N/A: <reason>` when the task adds or changes no guard, parser, classifier or validator. Failure modes and Touched surfaces are never `N/A`. A sweep hit that needs no change is listed as `checked, unchanged` with a short reason.
 
 ## Context References Section (MUST READ before planning)
 
@@ -118,7 +119,7 @@ Scan the plan against these 11 checks. Fix inline.
 8. Risk-based testing matrix is complete (see below)
 9. No placeholders/TBD — every section holds a real decision
 10. Open decisions are listed (not hidden in prose)
-11. Every phase of a PLAN-route plan carries `#### Input space`, `#### Failure modes` and `#### Touched surfaces`, and Touched surfaces lists every site its own sweep finds
+11. Every phase of a PLAN-route plan carries `#### Input space`, `#### Failure modes` and `#### Touched surfaces`, and Touched surfaces has a `Sweep:` line and lists every surface in the phase's Files/surfaces list and every site its own sweep finds (a hit that needs no change is listed as `checked, unchanged` with a short reason); only Input space may be `N/A: <reason>`
 
 ## Risk-Based Testing Matrix
 
