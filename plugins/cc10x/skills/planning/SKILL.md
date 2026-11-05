@@ -84,7 +84,7 @@ Sweep: `command grep -rnIiE "<pattern>" <paths>`
 
 If no Consumes/Produces: write `Consumes: none` / `Produces: none` explicitly.
 
-The three tables are required on every phase of a PLAN-route plan. Exempt: a `direct`-mode plan, QA-route plans, and a phase the plan marks done or built. Input space may be the single line `N/A: <reason>` when the task adds or changes no guard, parser, classifier or validator. Failure modes and Touched surfaces are never `N/A`. A sweep hit that needs no change is listed as `checked, unchanged` with a short reason.
+The three tables are required on every phase of a PLAN-route plan. Exempt: a `direct`-mode plan and QA-route plans. Input space may be the single line `N/A: <reason>` when the task adds or changes no guard, parser, classifier or validator. Failure modes and Touched surfaces are never `N/A`. A sweep hit that needs no change is listed as `checked, unchanged` with a short reason.
 
 ## Context References Section (MUST READ before planning)
 
@@ -119,7 +119,7 @@ Scan the plan against these 11 checks. Fix inline.
 8. Risk-based testing matrix is complete (see below)
 9. No placeholders/TBD — every section holds a real decision
 10. Open decisions are listed (not hidden in prose)
-11. Every phase of a PLAN-route plan carries `#### Input space`, `#### Failure modes` and `#### Touched surfaces`, and Touched surfaces has a `Sweep:` line and lists every surface in the phase's Files/surfaces list and every site its own sweep finds (a hit that needs no change is listed as `checked, unchanged` with a short reason); only Input space may be `N/A: <reason>`; exempt: a `direct`-mode plan, a QA-route plan, and a phase the plan marks done or built
+11. Every phase of a PLAN-route plan carries `#### Input space`, `#### Failure modes` and `#### Touched surfaces`, and Touched surfaces has a `Sweep:` line and lists every surface in the phase's Files/surfaces list and every site its own sweep finds (a hit that needs no change is listed as `checked, unchanged` with a short reason); only Input space may be `N/A: <reason>`; exempt: a `direct`-mode plan and a QA-route plan
 
 ## Risk-Based Testing Matrix
 
