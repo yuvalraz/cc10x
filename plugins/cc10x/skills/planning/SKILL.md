@@ -59,9 +59,31 @@ Each task in the plan:
 
 **Consumes:** [exact signatures used from earlier phases — verbatim]
 **Produces:** [exact names later phases rely on — verbatim]
+
+#### Input space
+
+| Input | Expected outcome | Test |
+|---|---|---|
+| [each input the change handles: valid, empty, invalid, boundary] | [outcome] | [test name] |
+
+#### Failure modes
+
+| Failure | Outcome (loud or closed) | Test |
+|---|---|---|
+| [what can go wrong] | [how it surfaces] | [test name] |
+
+#### Touched surfaces
+
+Sweep: `command grep -rnIiE "<pattern>" <paths>`
+
+| Surface | Kind | Action |
+|---|---|---|
+| [every file the sweep finds] | [producer, consumer, checker, doc] | [update, or unchanged with the reason] |
 ```
 
 If no Consumes/Produces: write `Consumes: none` / `Produces: none` explicitly.
+
+The three tables are required on every phase of a PLAN-route plan; QA-route plans do not carry them. Input space may be the single line `N/A: <reason>` when the task adds or changes no guard, parser, classifier or validator.
 
 ## Context References Section (MUST READ before planning)
 
@@ -84,7 +106,7 @@ Planner-specific mapping: every task must state its validation level. If manual,
 
 ## Plan Completeness Gate (MANDATORY — before save)
 
-Scan the plan against these 10 checks. Fix inline.
+Scan the plan against these 11 checks. Fix inline.
 
 1. Every task has a test that verifies completion
 2. Every task lists exact file paths (not "the auth module" — `src/auth/handler.ts`). Exact paths are safe here because a plan is executed immediately; a spec that lives for weeks would omit them.
@@ -96,6 +118,7 @@ Scan the plan against these 10 checks. Fix inline.
 8. Risk-based testing matrix is complete (see below)
 9. No placeholders/TBD — every section holds a real decision
 10. Open decisions are listed (not hidden in prose)
+11. Every phase of a PLAN-route plan carries `#### Input space`, `#### Failure modes` and `#### Touched surfaces`, and Touched surfaces lists every site its own sweep finds
 
 ## Risk-Based Testing Matrix
 

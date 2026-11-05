@@ -71,6 +71,7 @@ You are NOT checking style for its own sake. You are looking for gaps that would
    - Execution order does not assume output from a phase that runs later
    - No step requires a tool, permission, or API key the project does not have
    - Open decisions are labeled as such, not written as settled facts
+   - On a PLAN-route plan, every phase carries `#### Input space`, `#### Failure modes` and `#### Touched surfaces`. A missing or incomplete table is a BLOCKING `missing_surfaces` finding: a phase without one of the three, an Input space of `N/A: <reason>` on a phase that adds or changes a guard, parser, classifier or validator, or a Touched surfaces table that omits a site its own sweep finds. `N/A: <reason>` is accepted on a phase that changes none of those. QA-route plans (`qa-plan-review`, `qa-plan-review-2`) are exempt.
 6. If no meaningful issues remain, return `PASS`.
 7. If issues exist, return `FINDINGS` with tight, machine-usable categories.
 
@@ -89,6 +90,7 @@ Example findings (use as calibration, not exhaustive):
 
 - `repo_mismatches`: Plan says "update src/api/handler.ts" but file is at src/handlers/api.ts
 - `missing_surfaces`: Plan modifies a DB schema but has no migration step
+- `missing_surfaces`: Phase 3 changes a validator but its `#### Input space` reads `N/A: docs only` (BLOCKING)
 - `execution_order_issues`: Phase 2 imports a module that Phase 3 creates
 - `hidden_assumptions`: Plan assumes Redis is available but no Redis config exists in the repo
 - `under_scoped_integrations`: Plan adds an API route but does not update the route index or OpenAPI spec

@@ -3968,6 +3968,93 @@ ASSERTIONS = [
         "the body said it had no YAML block while its Output section emits one; REVIEW_MODE stays a dispatch input (A5)",
     ),
     A(
+        "planner: step 10 names the three phase tables, the N/A form, and scopes them to PLAN-route plans",
+        AGENTS / "planner.md",
+        lambda text: (m := re.search(r"10\. \*\*Normalize phases\*\*.*?\n11\. ", text, re.S)) is not None
+        and all(
+            h in m.group(0)
+            for h in ("`#### Input space`", "`#### Failure modes`", "`#### Touched surfaces`", "`N/A: <reason>`", "PLAN-route plans only")
+        )
+        and "guard, parser, classifier or validator" in m.group(0)
+        and "`qa-plan`, `qa-re-plan`" in m.group(0),
+        "tighter loops P1 (D14): every PLAN-route phase carries Input space, Failure modes and Touched surfaces; QA artifacts do not",
+    ),
+    A(
+        "planning: Task Structure carries the three phase tables and the gate lists 11 checks",
+        SKILLS / "planning" / "SKILL.md",
+        lambda text: (m := re.search(r"## Task Structure\n.*?\n## Context References", text, re.S)) is not None
+        and all(h in m.group(0) for h in ("#### Input space", "#### Failure modes", "#### Touched surfaces", "`N/A: <reason>`"))
+        and "Scan the plan against these 11 checks." in text
+        and "these 10 checks" not in text
+        and re.search(r"\n11\. Every phase of a PLAN-route plan carries `#### Input space`, `#### Failure modes` and `#### Touched surfaces`", text) is not None,
+        "tighter loops P1 (D14): the template and the completeness gate carry the phase tables",
+    ),
+    A(
+        "plan-gap-reviewer: a missing or incomplete phase table is BLOCKING missing_surfaces; QA-route plans exempt",
+        AGENTS / "plan-gap-reviewer.md",
+        lambda text: (m := re.search(r"\n5\. Build findings only from evidence\..*?\n6\. ", text, re.S)) is not None
+        and all(
+            p in m.group(0)
+            for p in (
+                "`#### Input space`, `#### Failure modes` and `#### Touched surfaces`",
+                "A missing or incomplete table is a BLOCKING `missing_surfaces` finding",
+                "`N/A: <reason>` on a phase that adds or changes a guard, parser, classifier or validator",
+                "omits a site its own sweep finds",
+                "QA-route plans (`qa-plan-review`, `qa-plan-review-2`) are exempt",
+            )
+        )
+        and "`missing_surfaces`: Phase 3 changes a validator but its `#### Input space` reads `N/A: docs only`" in text,
+        "tighter loops P1 (D14): the reviewer fails a PLAN-route plan that lacks a phase table, without a new bucket",
+    ),
+    A(
+        "plan-gap-reviewer: FINDING_BUCKETS keys unchanged",
+        AGENTS / "plan-gap-reviewer.md",
+        lambda text: (m := re.search(r"\nFINDING_BUCKETS:\n((?:  [a-z_]+: .*\n)+)", text)) is not None
+        and re.findall(r"^  ([a-z_]+):", m.group(1), re.M)
+        == [
+            "repo_mismatches",
+            "missing_surfaces",
+            "execution_order_issues",
+            "hidden_assumptions",
+            "under_scoped_integrations",
+            "open_decisions_presented_as_settled",
+        ],
+        "tighter loops P1 (D14): missing phase tables use missing_surfaces; harness_audit checks only the FINDING_BUCKETS literal, so this pin holds the six keys",
+    ),
+    A(
+        "plan-review-gate: Check 2 has the phase-tables row with its QA exemption",
+        SKILLS / "plan-review-gate" / "SKILL.md",
+        lambda text: (m := re.search(r"### Check 2: Completeness.*?### Check 3", text, re.S)) is not None
+        and re.search(
+            r"\n\| Phase tables present \|[^\n]*`#### Input space`, `#### Failure modes` and `#### Touched surfaces`[^\n]*\|[^\n]*Not blocking for `qa-plan` and `qa-re-plan` artifacts[^\n]*\|\n",
+            m.group(0),
+        )
+        is not None,
+        "tighter loops P1 (D14): the gate the planner runs fails a PLAN-route plan without phase tables and exempts QA artifacts",
+    ),
+    A(
+        "build-workflow: step 13 handoff includes the phase tables when the plan has them",
+        SKILLS / "cc10x-router" / "references" / "build-workflow.md",
+        lambda text: (m := re.search(r"\n13\. Router handoff for the current BUILD phase.*?### BUILD task graph", text, re.S)) is not None
+        and "`#### Input space`, `#### Failure modes` and `#### Touched surfaces`" in m.group(0)
+        and "when the plan phase carries them" in m.group(0),
+        "tighter loops P1 (D14): the builder sees the phase's tables",
+    ),
+    A(
+        "build-workflow: plan_trust_gate does not check the phase tables",
+        SKILLS / "cc10x-router" / "references" / "build-workflow.md",
+        lambda text: (m := re.search(r"\n3\. Run `plan_trust_gate` before BUILD:.*?\n4\. ", text, re.S)) is not None
+        and all(h not in m.group(0) for h in ("Input space", "Failure modes", "Touched surfaces")),
+        "tighter loops P1 (D14): plans saved before 12.11 still build",
+    ),
+    A(
+        "prompt-invariants: PINV-009 names the phase tables",
+        ROOT / "docs" / "prompt-invariants.md",
+        lambda text: (m := re.search(r"### PINV-009:.*?\n### ", text, re.S)) is not None
+        and "`#### Input space`, `#### Failure modes` and `#### Touched surfaces`" in m.group(0),
+        "tighter loops P1 (D14): the registry names the tables the reviewers check",
+    ),
+    A(
         "doc-syncer: legacy ADR cleanup is propose-only, deletes are user-run",
         AGENTS / "doc-syncer.md",
         lambda text: "Never delete a file: you have no delete tool and Bash is not for `rm`" in text
