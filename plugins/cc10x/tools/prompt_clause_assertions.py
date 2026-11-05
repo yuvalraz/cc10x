@@ -78,16 +78,17 @@ PHASE_TABLE_SENTENCES = (
     "A Touched surfaces table with no `Sweep:` command line is BLOCKING.",
     "A Touched surfaces table that omits a surface named in the phase's own Files/surfaces list is BLOCKING.",
     "A sweep hit listed as `checked, unchanged` with a short reason satisfies the sweep rule.",
-    "A planning-template placeholder left in a phase table is BLOCKING: `[outcome]`, `[test name]`, `[what can go wrong]`, `[how it surfaces]`, `[kind]` or `[short reason]` outside backticks in a row, `<pattern>` or `<paths>` in a `Sweep:` line, or an `N/A:` reason that is only `<reason>`. Bracketed text inside backticks in a row is content, not a placeholder.",
+    "A row cell, `Sweep:` argument or `N/A:` reason that still holds a bracketed placeholder copied unchanged from the planning template's `## Task Structure` is BLOCKING.",
+    "Bracketed text inside backticks in a row is content, not a placeholder.",
 )
 
 # Each phase-table rule is pinned as an exact line: it must appear exactly once, verbatim, as a whole line.
 REVIEWER_PHASE_RULE = (
     "   - On a PLAN-route plan, every phase carries `#### Input space`, `#### Failure modes` and `#### Touched surfaces`."
     " A missing or incomplete table is a BLOCKING `missing_surfaces` finding: a phase without one of the three,"
-    " an Input space of `N/A: <reason>` on a phase that adds or changes a guard, parser, classifier or validator,"
-    " or a Touched surfaces table that omits a site its own sweep finds (check with your Grep tool, using the `Sweep:` line's pattern and paths). "
+    " or an Input space of `N/A: <reason>` on a phase that adds or changes a guard, parser, classifier or validator. "
     + " ".join(PHASE_TABLE_SENTENCES)
+    + " Do not re-run the `Sweep:` command: its flags need a shell, and plan-review-gate re-runs it inside the planner."
     + " Exempt: a `direct`-mode plan and a QA-route plan (`qa-plan-review`, `qa-plan-review-2`)."
 )
 GATE_PHASE_ROW = (
@@ -4080,6 +4081,15 @@ ASSERTIONS = [
         lambda text: (m := re.search(r"### Check 2: Completeness.*?### Check 3", text, re.S)) is not None
         and pinned_line(m.group(0), GATE_PHASE_ROW),
         "tighter loops P1 (D14): the gate the planner runs fails a PLAN-route plan without phase tables or with hollow ones; direct plans and QA artifacts are exempt",
+    ),
+    A(
+        "planning: the placeholder rule points at Task Structure and lists none of its tokens by hand",
+        SKILLS / "planning" / "SKILL.md",
+        lambda text: (m := re.search(r"## Task Structure\n.*?\n## Context References", text, re.S)) is not None
+        and len(tokens := set(re.findall(r"\[[^\]\n]*\]|<[^>\n]*>", m.group(0)))) >= 13
+        and any("`## Task Structure`" in s for s in PHASE_TABLE_SENTENCES)
+        and not any(tok in s for tok in tokens for s in PHASE_TABLE_SENTENCES[-2:]),
+        "tighter loops P1 (D14): a hand-listed token set drifted from the template (5 of 13 missing); the rule now names the template instead",
     ),
     A(
         "build-workflow: step 13 handoff includes the phase tables verbatim when the plan has them",
