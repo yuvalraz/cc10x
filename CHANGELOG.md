@@ -4,7 +4,7 @@
 
 ### Tighter loops
 
-- **Plan phase tables.** Every phase of a PLAN-route plan now carries `#### Input space`, `#### Failure modes` and `#### Touched surfaces` (planner step 10, the planning skill's Task Structure, and an eleventh Plan Completeness Gate check). Input space may be the single line `N/A: <reason>` when the phase adds or changes no guard, parser, classifier or validator. plan-gap-reviewer and plan-review-gate report a missing or incomplete table as a BLOCKING `missing_surfaces` finding; the `FINDING_BUCKETS` contract keeps its six keys. QA-route plans are exempt. The BUILD handoff passes the phase's tables to the builder. `plan_trust_gate` does not check them, so plans saved before 12.11 still build.
+- **Plan phase tables.** Every phase of a PLAN-route plan now carries `#### Input space`, `#### Failure modes` and `#### Touched surfaces` (planner step 10, the planning skill's Task Structure, and an eleventh Plan Completeness Gate check). Input space may be the single line `N/A: <reason>` when the phase adds or changes no guard, parser, classifier or validator. plan-gap-reviewer and plan-review-gate report a missing or incomplete table as a BLOCKING `missing_surfaces` finding; the `FINDING_BUCKETS` contract keeps its six keys. A placeholder left in a table, its `Sweep:` line or an `N/A:` reason is BLOCKING. `direct`-mode plans, QA-route plans and phases a plan marks done or built are exempt. The BUILD handoff passes the phase's tables to the builder. `plan_trust_gate` does not check them, so plans saved before 12.11 still build.
 
 ### Loop pane
 
