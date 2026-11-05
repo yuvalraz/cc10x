@@ -88,15 +88,33 @@ REVIEWER_PHASE_RULE = (
     " A missing or incomplete table is a BLOCKING `missing_surfaces` finding: a phase without one of the three,"
     " or an Input space of `N/A: <reason>` on a phase that adds or changes a guard, parser, classifier or validator. "
     + " ".join(PHASE_TABLE_SENTENCES)
-    + " Do not re-run the `Sweep:` command: its flags need a shell, and plan-review-gate re-runs it inside the planner."
+    + " Do not re-run the `Sweep:` command: its flags need a shell you do not have, and plan-review-gate re-runs every"
+    " phase's `Sweep:` command with Bash inside the planner."
     + " Exempt: a `direct`-mode plan and a QA-route plan (`qa-plan-review`, `qa-plan-review-2`)."
 )
 GATE_PHASE_ROW = (
     "| Phase tables present | For each phase of a PLAN-route plan, find `#### Input space`, `#### Failure modes` and `#### Touched surfaces`;"
-    " spot-check one Touched surfaces sweep against the repo | A phase lacks a table, its Input space is `N/A: <reason>`"
+    " re-run every phase's `Sweep:` command with Bash and compare its hits to that phase's Touched surfaces"
+    " | A phase lacks a table, its Input space is `N/A: <reason>`"
     " while it changes a guard, parser, classifier or validator, or its Touched surfaces omits a site its sweep finds. "
     + " ".join(PHASE_TABLE_SENTENCES)
     + " Not blocking for a `direct`-mode plan or for `qa-plan` and `qa-re-plan` artifacts (QA-route plans). |"
+)
+GATE_TOOLS_SENTENCE = (
+    "checks it against 3 criteria using Read/Grep/Glob, plus Bash to re-run every phase's `Sweep:` command."
+)
+# The placeholder rule compares rows to the planning template; the reviewer loads no skills, so the PLAN-route scaffolds name it as a Read.
+PLAN_TEMPLATE_READ = (
+    "Read ${CLAUDE_PLUGIN_ROOT}/skills/planning/SKILL.md first, for its `## Task Structure` block only — it is the template"
+    " the placeholder rule compares phase-table rows against, and it arrives as a file because you load no skills."
+)
+PLAN_TEMPLATE_READ_PHASES = ("plan-review-gap-1", "plan-review-gap-2", "plan-review-amendment")
+REVIEWER_TEMPLATE_READ = (
+    "On PLAN-route dispatches (`plan-review-gap-1`, `plan-review-gap-2`, `plan-review-amendment`), the scaffold names one"
+    " file to Read instead: `${CLAUDE_PLUGIN_ROOT}/skills/planning/SKILL.md`, for its `## Task Structure` block only — the"
+    " template the placeholder rule in step 5 compares phase-table rows against. It is sanctioned on the same grounds: a"
+    " neutral template, not author narrative, not prior findings, and not a `.cc10x/*.md` artifact, so it counts as an"
+    " explicitly provided file on those dispatches, in both `fresh` and `amendment` mode."
 )
 PLANNER_PHASE_RULE = (
     "    - **Phase tables (PLAN-route plans only):** after the Interfaces block, every phase carries `#### Input space`"
@@ -4081,6 +4099,35 @@ ASSERTIONS = [
         lambda text: (m := re.search(r"### Check 2: Completeness.*?### Check 3", text, re.S)) is not None
         and pinned_line(m.group(0), GATE_PHASE_ROW),
         "tighter loops P1 (D14): the gate the planner runs fails a PLAN-route plan without phase tables or with hollow ones; direct plans and QA artifacts are exempt",
+    ),
+    A(
+        "plan-review-gate: the auditor re-runs every phase's Sweep command with Bash",
+        SKILLS / "plan-review-gate" / "SKILL.md",
+        lambda text: text.count(GATE_TOOLS_SENTENCE) == 1
+        and "criteria using Read/Grep/Glob. " not in text
+        and "spot-check one Touched surfaces sweep" not in text
+        and re.search(r"(?m)^allowed-tools: .*\bBash\b", text) is not None,
+        "tighter loops P1 (D14): the reviewer skips the sweep because the gate re-runs it, so the gate must re-run every phase's sweep, not spot-check one",
+    ),
+    A(
+        "plan-gap-reviewer: the planning-template Read is sanctioned on PLAN-route dispatches",
+        AGENTS / "plan-gap-reviewer.md",
+        lambda text: (m := re.search(r"(?m)^\*\*The sanctioned extra Reads\.\*\* On `qa-plan-review`.*$", text)) is not None
+        and m.group(0).count(REVIEWER_TEMPLATE_READ) == 1
+        and m.group(0).endswith(REVIEWER_TEMPLATE_READ)
+        and "skills/qa-strategy/SKILL.md" in m.group(0),
+        "tighter loops P1 (D14): the placeholder rule names the planning template, which the freshness rule allows only as an explicitly provided file",
+    ),
+    A(
+        "plan-workflow: every PLAN-route reviewer scaffold names the planning-template Read",
+        SKILLS / "cc10x-router" / "references" / "plan-workflow.md",
+        lambda text: all(
+            (m := re.search(r'description: "[^"\n]*\\nphase:' + re.escape(ph) + r'\\n[^"\n]*"', text)) is not None
+            and m.group(0).count(PLAN_TEMPLATE_READ) == 1
+            for ph in PLAN_TEMPLATE_READ_PHASES
+        )
+        and text.count(PLAN_TEMPLATE_READ) == len(PLAN_TEMPLATE_READ_PHASES),
+        "tighter loops P1 (D14): plan-gap-reviewer loads no skills; without this Read the template sits in the plugin cache, out of reach",
     ),
     A(
         "planning: the placeholder rule points at Task Structure and lists none of its tokens by hand",
