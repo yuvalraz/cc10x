@@ -192,13 +192,13 @@ When an approved phase decomposes into multiple INDEPENDENT logical tasks AND th
 
 The finer per-TASK review cadence (one review per task rather than one per phase) applies ONLY in this mode. In the default per-phase mode the phase-level reviewer/verifier chain is unchanged. This mode reuses the existing builder + reviewer machinery — it changes dispatch granularity, not the agents.
 
-### Deferred Minor findings roll-up
+### Deferred findings roll-up
 
-Minor findings that do not block a phase exit must not silently evaporate — that violates the "no finding silently discarded" rule. The workflow artifact carries a `deferred_findings` array for exactly this:
+MEDIUM and LOW findings do not block a BUILD phase exit, and they must not silently evaporate — that violates the "no finding silently discarded" rule. The workflow artifact carries a `deferred_findings` array for exactly this:
 
-- When `code-reviewer` or `failure-hunter` raises a Minor finding that does NOT block the current `phase_exit_gate`, the router appends it to `deferred_findings` (each entry: `source` agent, `phase_id`, terse `finding`, and `severity:minor`) rather than dropping it. Blocking findings still gate the phase as before — this array is only for the non-blocking remainder.
+- When `code-reviewer` or `failure-hunter` reports a MEDIUM or LOW finding under `### Findings`, the router appends it to `deferred_findings` (each entry: `source` agent, `phase_id`, terse `finding`, and `severity` `medium` or `low`, from the agent's severity) and creates no REM-FIX for it. The blocking set (`remediation-and-research.md` `### Scope resolution`) still gates the phase; this array is only for the non-blocking remainder. The deferral is BUILD only: DEBUG auto-creates a REM-FIX for non-blocking findings (rule 1b). `severity` `minor` stays valid for QA entries and older artifacts.
 - The array accumulates across phases for the whole workflow. Nothing consumes it mid-flight; it is surfaced once at BUILD-DONE (see the finishing block's triage step) so the user can decide explicitly: fix now, file as follow-up, or knowingly accept. No automatic action is taken on a deferred finding.
-- In the reduced task graph (`build_scope=trivial`) there is no separate reviewer, so the verifier's folded review/edge-case pass appends any Minor leftovers to `deferred_findings` the same way.
+- In the reduced task graph (`build_scope=trivial`) there is no separate reviewer, so the verifier's folded review/edge-case pass appends any MEDIUM or LOW leftovers to `deferred_findings` the same way.
 
 ### doc-syncer SKIPPED state
 

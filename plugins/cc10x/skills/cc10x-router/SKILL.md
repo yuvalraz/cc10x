@@ -170,18 +170,7 @@ Terminal test: a workflow is terminal when its events log or `status_history` ho
 
 Scope-decision resume:
 
-- Before normal routing, check `activeContext.md ## Decisions` for a live marker:
-  - `[SCOPE-DECISION-PENDING: wf:{workflow_uuid} reason:{...}]`
-- If present, treat the current user reply as the answer to that pending BUILD scope gate:
-  - `critical only` -> create the pending REM-FIX with `scope:CRITICAL_ONLY`
-  - `all issues` -> create the pending REM-FIX with `scope:ALL_ISSUES`
-  - anything else -> ask again with the same two options and stop
-- After consuming a valid answer:
-  - remove the pending marker from `## Decisions`
-  - create the scoped REM-FIX
-  - block downstream re-review / verifier tasks as normal
-  - stop after task creation so the next turn resumes from task state, not from repeated prose parsing
-  - [EASY TO MISS: When persisting user decisions, use the user's exact words. Paraphrasing introduces drift that compounds across resume cycles.]
+- A legacy `[SCOPE-DECISION-PENDING: wf:{workflow_uuid} reason:{...}]` marker in `activeContext.md ## Decisions` (written by a pre-12.11 router) is removed from `## Decisions` and its REM-FIX created with `scope:ALL_ISSUES`; the router asks no scope question (`references/remediation-and-research.md` `### Scope resolution`).
 
 Safety rules:
 
@@ -486,7 +475,7 @@ Verdict extraction:
 
 1. Read the YAML block and take the verdict from its `STATUS` (`PLANNING_REVIEW_STATUS` for `plan-gap-reviewer`).
 2. If the YAML block is absent, the envelope on line 1, else the heading in the first 5 lines, only names the verdict to re-check.
-3. Extract `CRITICAL_ISSUES` from `### Critical Issues`.
+3. Extract `CRITICAL_ISSUES` from `### Critical Issues`, and HIGH findings from the reviewer's `### Findings` entries with `Severity: HIGH` and the hunter's `HIGH_ISSUES` field and its `### Findings` entries with `Severity: HIGH`.
 4. If the YAML block is absent or any required contract field is missing, whatever the envelope and heading say, run inline verification rather than approving; for TRIAGE and CODEBASE-HEALTH there is nothing to verify inline, so the router sets `failure_stop_gate` instead (see their workflow references; no Memory Update).
 5. Detect `SELF_REMEDIATED` from task state:
    - If the task remains `in_progress` and `blockedBy` is non-empty after the agent stops, treat it as self-remediated. This is `blockedBy` based, so it cannot fire in artifact-only mode; there the structured remediation fields decide.
@@ -684,15 +673,19 @@ Before invoking `integration-verifier` in BUILD:
   **Verdict:** {Approve|Changes Requested}
   **Critical Issues:**
   {reviewer critical issues or "None"}
+  **High Issues:**
+  {reviewer high issues or "None"}
 
   ### Failure Hunter
   **Critical Issues:**
   {hunter critical issues or "None / not in this workflow"}
+  **High Issues:**
+  {hunter high issues or "None / not in this workflow"}
   ```
 
 - Never invoke verifier without that section when review/hunt already ran. On a re-verify after a REM-FIX, add a `### REM-FIX report` sub-block that references the persisted REM-FIX report (`results.builder`, or `results.investigator` when `bug-investigator` executed the REM-FIX) and its proof and dispute fields, per the Re-review precondition gate in `references/remediation-and-research.md`.
 
-**Post-verifier finding validation (act on hallucinated findings):** after the verifier returns, read its `### Reviewer Finding Validation` section. For any finding the verifier marked `validated: false`, DROP that finding from the merged findings set before creating a REM-FIX task — a hallucinated critical finding must not gate the phase or waste a builder cycle. Log the dropped finding in `status_history` (`finding_dropped: hallucinated — verifier could not confirm quote at file:line`). For `validated: degraded` CRITICAL/HIGH findings, KEEP them in the blocking set (fail-safe — a transient access failure must never silently remove a critical finding). This gate runs BEFORE the REM-FIX scope decision in §remediation-and-research, so `CRITICAL_ONLY` / `ALL_ISSUES` scope is computed over validated findings only.
+**Post-verifier finding validation (act on hallucinated findings):** after the verifier returns, read its `### Reviewer Finding Validation` section. For any finding the verifier marked `validated: false`, DROP that finding from the merged findings set before creating a REM-FIX task — a hallucinated critical finding must not gate the phase or waste a builder cycle. Log the dropped finding in `status_history` (`finding_dropped: hallucinated — verifier could not confirm quote at file:line`). For `validated: degraded` CRITICAL/HIGH findings, KEEP them in the blocking set (fail-safe — a transient access failure must never silently remove a critical finding). This gate runs BEFORE the blocking set is computed (`references/remediation-and-research.md` `### Scope resolution`), so the blocking set is computed over validated findings only.
 
 ### Inline no-subagent execution (FALLBACK — not the default)
 
@@ -755,7 +748,7 @@ For DEBUG:
 - Never use an unscoped task lookup in critical paths.
 - Never treat stored task IDs as durable truth across workflows.
 - Never spawn Memory Update as a sub-agent — a sub-agent lacks the captured payload and the memory files' session context.
-- Never create `CC10X TODO:` tasks. Non-blocking discoveries go into `**Deferred:**` memory notes.
+- Never create `CC10X TODO:` tasks. Non-blocking discoveries that are not findings go into `**Deferred:**` memory notes; MEDIUM and LOW findings go under `### Findings` (BUILD defers them to `deferred_findings`).
 - Never let REVIEW create implementation tasks without an explicit router/user transition into BUILD.
 - A QA-seeded DEBUG never inherits QA's verdict about *where* the bug is. Pass QA's boundary evidence; pass its suspicion only as a labelled hint with its basis. `bug-investigator` still owns its Feedback Loop Gate — a pre-built repro loop satisfies that gate only after the investigator personally observes it turn red. A seeded loop that no longer reproduces sends the investigator back to rung 1, never forward on trust. [EASY TO MISS: a stale QA report will happily send a debugger hunting a bug that was already fixed.]
 - Never let QA edit product code. Not the researcher, not the harness builder, not the executor, and not the planner that runs `qa-plan`/`qa-re-plan` — it holds `Edit`/`Write`/`Bash` like the rest. QA proves behavior; DEBUG repairs it. A route that can fix what it measures cannot be believed about what it measured. QA reports `BUG_CANDIDATES` and may OFFER a DEBUG follow-up — it never auto-starts one.

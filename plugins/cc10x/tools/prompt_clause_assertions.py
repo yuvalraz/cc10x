@@ -150,6 +150,163 @@ FINDING_BUCKET_KEYS = [
     "open_decisions_presented_as_settled",
 ]
 
+# Tighter loops P2 (D1-D4): only CRITICAL and HIGH block; one REM-FIX takes the whole blocking set; MEDIUM and LOW are deferred.
+RULE_1A_ROW = (
+    "| 1a | Blocking issue in BUILD/DEBUG (in BUILD: the blocking set, `### Scope resolution`) | Router creates one REM-FIX"
+    " for the whole blocking set with `scope:ALL_ISSUES`, blocks downstream tasks, stop. |"
+)
+RULE_1B_ROW = (
+    "| 1b | Non-blocking (MEDIUM or LOW) findings | In BUILD, append MEDIUM and LOW findings to `deferred_findings` (no REM-FIX)."
+    " In DEBUG, auto-create a REM-FIX (unchanged: DEBUG has no BUILD-DONE to surface the array). In REVIEW, ask whether to start BUILD. |"
+)
+RULE_2_ROW = (
+    "| 2 | Reviewer verdict is Approve but failure-hunter reports HIGH issues | Remediate: HIGH is in the blocking set, so rule 1a"
+    " creates the REM-FIX. No ask. |"
+)
+SCOPE_BLOCKING_SET = (
+    "- The blocking set of a BUILD phase is every validated CRITICAL and HIGH finding from `code-reviewer`, `failure-hunter`"
+    " and `integration-verifier` (after post-verifier finding validation), plus the non-severity gates that already block:"
+    " a non-PASS `SPEC_COMPLIANCE`, an unresolved `CANNOT_VERIFY_CROSS_PHASE`, a verifier `FAIL`, a missing or false TDD"
+    " RED/GREEN. MEDIUM and LOW never block a BUILD phase."
+)
+SCOPE_SOURCES = (
+    "- Severity sources. CRITICAL: each agent's `### Critical Issues`. HIGH: the reviewer's `### Findings` entries with"
+    " `Severity: HIGH`, and the hunter's `HIGH_ISSUES` field and its `### Findings` entries with `Severity: HIGH`. MEDIUM and"
+    " LOW: the reviewer's and the hunter's `### Findings` entries with `Severity: MEDIUM` or `Severity: LOW`. The verifier"
+    " rates no severity: its blocking input is `STATUS: FAIL` and `### Critical Issues`, and its `### Findings` are"
+    " observations that never block and are never deferred."
+)
+SCOPE_NOTES = (
+    "- Notes are not findings. Coverage, pattern and recommendation notes (the hunter writes them under `### Coverage`) never"
+    " block and are never deferred. An entry under the reviewer's or the hunter's `### Findings` heading whose severity is"
+    " missing or an unknown word is blocking (fail closed)."
+)
+SCOPE_ONE_WAVE = (
+    "- Every BUILD REM-FIX takes the whole blocking set in one wave with `scope:ALL_ISSUES`, and the router asks no scope"
+    " question. BUILD reviewers request `REMEDIATION_SCOPE_REQUESTED: N/A`. The router never creates `scope:CRITICAL_ONLY`;"
+    " the value stays in the enum only so pre-12.11 tasks still parse."
+)
+SCOPE_ENVELOPE = (
+    "- The router computes the blocking set from finding severities, never from the envelope `b`, which counts CRITICAL only."
+)
+SCOPE_LEGACY = (
+    "- Legacy marker: a `[SCOPE-DECISION-PENDING: ...]` marker that a pre-12.11 router left in `activeContext.md ## Decisions`"
+    " is resolved on resume as `SKILL.md` §4 `Scope-decision resume:` says (marker removed, REM-FIX created with"
+    " `scope:ALL_ISSUES`)."
+)
+ROUTER_LEGACY_RESUME = (
+    "- A legacy `[SCOPE-DECISION-PENDING: wf:{workflow_uuid} reason:{...}]` marker in `activeContext.md ## Decisions` (written"
+    " by a pre-12.11 router) is removed from `## Decisions` and its REM-FIX created with `scope:ALL_ISSUES`; the router asks"
+    " no scope question (`references/remediation-and-research.md` `### Scope resolution`)."
+)
+ROUTER_STEP3 = (
+    "3. Extract `CRITICAL_ISSUES` from `### Critical Issues`, and HIGH findings from the reviewer's `### Findings` entries with"
+    " `Severity: HIGH` and the hunter's `HIGH_ISSUES` field and its `### Findings` entries with `Severity: HIGH`."
+)
+ROUTER_HANDOFF_REVIEWER_HIGH = '  {reviewer high issues or "None"}'
+ROUTER_HANDOFF_HUNTER_HIGH = '  {hunter high issues or "None / not in this workflow"}'
+ROUTER_POST_VERIFIER = (
+    "This gate runs BEFORE the blocking set is computed (`references/remediation-and-research.md` `### Scope resolution`),"
+    " so the blocking set is computed over validated findings only."
+)
+ROUTER_TODO_RULE = (
+    "- Never create `CC10X TODO:` tasks. Non-blocking discoveries that are not findings go into `**Deferred:**` memory notes;"
+    " MEDIUM and LOW findings go under `### Findings` (BUILD defers them to `deferred_findings`)."
+)
+BUILD_DEFERRED_HEADING = "### Deferred findings roll-up"
+BUILD_DEFERRED_RULE = (
+    "- When `code-reviewer` or `failure-hunter` reports a MEDIUM or LOW finding under `### Findings`, the router appends it"
+    " to `deferred_findings` (each entry: `source` agent, `phase_id`, terse `finding`, and `severity` `medium` or `low`, from"
+    " the agent's severity) and creates no REM-FIX for it. The blocking set (`remediation-and-research.md` `### Scope"
+    " resolution`) still gates the phase; this array is only for the non-blocking remainder. The deferral is BUILD only:"
+    " DEBUG auto-creates a REM-FIX for non-blocking findings (rule 1b). `severity` `minor` stays valid for QA entries and"
+    " older artifacts."
+)
+POLICY_DEFERRED_BULLET = (
+    "- `deferred_findings` accumulates non-blocking findings across phases (each entry: `source`, `phase_id`, `finding`,"
+    " `severity`, where `severity` is `medium` or `low` from a BUILD agent's severity, or `minor` from QA and older"
+    " artifacts); never consumed mid-flight, and surfaced once — at BUILD-DONE triage on the BUILD route, and on the QA"
+    " route with the report, alongside the DEBUG offer, because QA has no BUILD-DONE triage to surface it at. See"
+    " `build-workflow.md` §Deferred findings roll-up and `qa-workflow.md` *Harness review*."
+)
+POLICY_REVIEWER_OVERRIDE = "| code-reviewer | `APPROVE` + critical or high issues becomes `CHANGES_REQUESTED` |"
+REVIEWER_RULE = (
+    "**Rule:** CRITICAL or HIGH findings → CHANGES_REQUESTED regardless of other dimensions; MEDIUM and LOW alone never"
+    " change the verdict (the router defers them)."
+)
+REVIEWER_WHY = (
+    "**Why this matters:** Router reads heading (`## Review: Approve/Changes Requested`) + reads `### Critical Issues` and"
+    " the HIGH entries under `### Findings` for blocking decisions. Signal scores survive in Memory Notes for pattern tracking."
+)
+REVIEWER_NO_BLOCKING = "**If NO CRITICAL or HIGH issues (Confidence ≥ 80) are found:**"
+REVIEWER_BLOCKING = "**If CRITICAL or HIGH issues (Confidence ≥ 80) are found:**"
+REVIEWER_BUILD_SCOPE = (
+    "- BUILD review: request `REMEDIATION_SCOPE_REQUESTED: N/A`; the router always takes the whole blocking set"
+    " (`scope:ALL_ISSUES`) after combining your findings with the failure-hunter's parallel findings."
+)
+REVIEWER_NON_BLOCKING = "**If only MEDIUM or LOW issues are found:**"
+REVIEWER_NON_BLOCKING_ACTION = (
+    "→ Report them under `### Findings` with their severity; the router defers them (BUILD) or fixes them (DEBUG). Do NOT"
+    " create a task."
+)
+AGENT_DEFERRED_LINE = (
+    "- **Deferred:** [follow-ups that are not findings; MEDIUM and LOW findings go under `### Findings`, never here]"
+)
+HUNTER_NO_SELF_HEALING = (
+    "**No self-healing (by design):** Unlike code-reviewer, this agent does NOT create its own REM-FIX tasks. It reports"
+    " only. The router handles all remediation: rule 1a takes the blocking set (CRITICAL and HIGH), and rule 1b defers"
+    " MEDIUM and LOW in BUILD. This is intentional — the hunter's job is detection, not correction."
+)
+HUNTER_RUBRIC_HEADER = "| Severity | Definition | Examples | Blocks the phase? |"
+HUNTER_RUBRIC_ROWS = (
+    "| **CRITICAL** | Data loss, security hole, crash, silent data corruption | Empty catch swallowing auth errors,"
+    " hardcoded secrets, null pointer in payment flow | **YES** |",
+    "| **HIGH** | Wrong behavior user will notice, degraded UX | Generic \"Something went wrong\", missing error boundary"
+    " | **YES** |",
+    "| **MEDIUM** | Suboptimal but functional | Missing loading state, non-specific message | No (deferred) |",
+    "| **LOW** | Code smell, style issue | Unused variable, verbose logging | No (listed) |",
+)
+HUNTER_STEPS = (
+    "3. **Rate severity** - CRITICAL (silent), HIGH (generic), MEDIUM (could improve), LOW (style only)",
+    "4. **Report CRITICAL immediately** - List it under `### Critical Issues` with exact file:line, recommended fix, AND"
+    " prevention mechanism",
+    "5. **Report every finding** - Every finding, whatever its severity, is one entry under `### Findings` with its"
+    " `Severity:` line (CRITICAL, HIGH, MEDIUM or LOW)",
+    "8. **Coverage truthfulness** - If search scope is incomplete, file access failed, or changed surfaces were skipped,"
+    " report that gap explicitly under `### Coverage`, never under `### Findings`. Never claim CLEAN unless the scanned"
+    " scope is stated.",
+)
+HUNTER_STEP9_NOTE = (
+    "add advisory note under `### Coverage` (never under `### Findings`): \"Low handler coverage: only N sites inspected."
+    " CLEAN verdict may be incomplete.\""
+)
+HUNTER_MUST_FIX = "**CRITICAL and HIGH Issues MUST be fixed before workflow completion:**"
+HUNTER_NO_THRESHOLD = (
+    "- No threshold for deferring: If CRITICAL or HIGH, router must route a fix (typically via component-builder) before"
+    " shipping"
+)
+HUNTER_GATE = (
+    "**GATE:** This agent can complete its task after reporting. CRITICAL and HIGH issues remain a workflow blocker until"
+    " fixed."
+)
+HUNTER_NON_BLOCKING = "**If only MEDIUM or LOW issues are found (non-blocking):**"
+HUNTER_NON_BLOCKING_ACTION = "→ Report them under `### Findings`; the router defers them. Do NOT create a task."
+HUNTER_CRITICAL_HEADING = "### Critical Issues (blocks the phase; router must route fix)"
+HUNTER_FINDINGS_BLOCK = (
+    "### Findings\n"
+    "- Severity: CRITICAL | HIGH | MEDIUM | LOW\n"
+    "- Evidence: [file:line — quote]\n"
+    "- Fix direction: [concise recommendation]\n"
+    "\n"
+    "### Coverage\n"
+)
+CODE_REVIEW_DEFERRED = (
+    "MEDIUM and LOW findings, the router's non-blocking class (only CRITICAL and HIGH block), are NOT dropped, but you do"
+    " NOT need a separate file or a separate CONTRACT field for them."
+)
+README_PAUSE_LINE = "- when to pause for clarification"
+INV005_HEADING = "### INV-005: Every BUILD REM-FIX takes the whole blocking set"
+
 
 def pinned_line(text: str, line: str) -> bool:
     """`line` appears exactly once in `text`, verbatim, as a whole line. On failure, names the line it expected."""
@@ -4160,6 +4317,127 @@ ASSERTIONS = [
         "tighter loops P1 (D14): the registry names the tables the reviewers check",
     ),
     A(
+        "remediation: rule matrix has no 1a-SCOPE row; 1a takes the blocking set, 1b defers MEDIUM/LOW in BUILD only, rule 2 remediates",
+        ROUTER_REFS / "remediation-and-research.md",
+        lambda text: pinned_line(text, RULE_1A_ROW)
+        and pinned_line(text, RULE_1B_ROW)
+        and pinned_line(text, RULE_2_ROW)
+        and "| 1a-SCOPE |" not in text
+        and "Fix critical only (Recommended)" not in text
+        and "Ask whether to remediate or proceed" not in text,
+        "tighter loops P2 (D1, D2): the scope question cost a round trip, and rule 2 asked before fixing a HIGH",
+    ),
+    A(
+        "remediation: scope resolution names the blocking set, its non-severity gates, every severity source, the notes rule and the legacy marker",
+        ROUTER_REFS / "remediation-and-research.md",
+        lambda text: all(
+            pinned_line(text, line)
+            for line in (SCOPE_BLOCKING_SET, SCOPE_SOURCES, SCOPE_NOTES, SCOPE_ONE_WAVE, SCOPE_ENVELOPE, SCOPE_LEGACY)
+        )
+        and "before the blocking set is computed" in text
+        and "before any REM-FIX scope is computed" not in text
+        and "the router resolves `CRITICAL_ONLY` vs `ALL_ISSUES`" not in text
+        and len(re.findall(r">= ?3", text)) == 1,
+        "tighter loops P2 (D1-D3): HIGH must be extractable from every agent's real output, and a note without a severity must not fail closed",
+    ),
+    A(
+        "router: the scope-decision resume block keeps its label and only resolves a legacy marker to ALL_ISSUES",
+        SKILLS / "cc10x-router" / "SKILL.md",
+        lambda text: pinned_line(text, "Scope-decision resume:")
+        and pinned_line(text, ROUTER_LEGACY_RESUME)
+        and "`critical only` -> create the pending REM-FIX" not in text
+        and "Fix critical only (Recommended)" not in text,
+        "tighter loops P2 (D2): no scope question; a pre-12.11 marker still resumes",
+    ),
+    A(
+        "router: step 3 extracts HIGH, the verifier handoff passes HIGH for both agents, and validation precedes the blocking set",
+        SKILLS / "cc10x-router" / "SKILL.md",
+        lambda text: pinned_line(text, ROUTER_STEP3)
+        and text.count("**High Issues:**") == 2
+        and text.count("**Critical Issues:**") == 2
+        and pinned_line(text, ROUTER_HANDOFF_REVIEWER_HIGH)
+        and pinned_line(text, ROUTER_HANDOFF_HUNTER_HIGH)
+        and ROUTER_POST_VERIFIER in text
+        and "`CRITICAL_ONLY` / `ALL_ISSUES` scope is computed" not in text
+        and pinned_line(text, ROUTER_TODO_RULE),
+        "tighter loops P2 (D1): a HIGH dropped between review and verifier never gets validated, and a MEDIUM must not ride the memory channel",
+    ),
+    A(
+        "build-workflow: Deferred findings roll-up writes medium or low in BUILD and keeps minor valid",
+        ROUTER_REFS / "build-workflow.md",
+        lambda text: pinned_line(text, BUILD_DEFERRED_HEADING)
+        and pinned_line(text, BUILD_DEFERRED_RULE)
+        and "### Deferred Minor findings roll-up" not in text
+        and "raises a Minor finding that does NOT block" not in text,
+        "tighter loops P2 (D4): deferred entries carry the agent's severity",
+    ),
+    A(
+        "policy: deferred_findings severities are medium, low and minor; the reviewer override names high issues",
+        POLICY_REF,
+        lambda text: pinned_line(text, POLICY_DEFERRED_BULLET)
+        and pinned_line(text, POLICY_REVIEWER_OVERRIDE)
+        and "| code-reviewer | `APPROVE` + critical issues becomes `CHANGES_REQUESTED` |" not in text,
+        "tighter loops P2 (D1, D4): a reviewer APPROVE with a HIGH must not pass the phase",
+    ),
+    A(
+        "code-reviewer: CRITICAL or HIGH blocks; MEDIUM and LOW go under Findings, never Memory Notes",
+        AGENTS / "code-reviewer.md",
+        lambda text: all(
+            pinned_line(text, line)
+            for line in (
+                REVIEWER_RULE, REVIEWER_WHY, REVIEWER_NO_BLOCKING, REVIEWER_BLOCKING, REVIEWER_BUILD_SCOPE,
+                REVIEWER_NON_BLOCKING, REVIEWER_NON_BLOCKING_ACTION, AGENT_DEFERRED_LINE,
+            )
+        )
+        and "**Rule:** CRITICAL failures → CHANGES_REQUESTED" not in text
+        and "counts `### Critical Issues` entries for blocking decisions" not in text
+        and "but no CRITICAL ones" not in text
+        and "MEDIUM/LOW issues for patterns.md" not in text
+        and "REMEDIATION_SCOPE_REQUESTED: N/A | CRITICAL_ONLY | ALL_ISSUES" in text
+        and text.count("gates to CHANGES_REQUESTED on its own") == 1
+        and text.count("routes it to the planner") == 1,
+        "tighter loops P2 (D1): the reviewer said only CRITICAL blocks and sent MEDIUMs to Memory Notes",
+    ),
+    A(
+        "failure-hunter: CRITICAL and HIGH block, every finding carries a Severity line, notes live under Coverage",
+        AGENTS / "failure-hunter.md",
+        lambda text: all(
+            pinned_line(text, line)
+            for line in (
+                HUNTER_NO_SELF_HEALING, HUNTER_RUBRIC_HEADER, *HUNTER_RUBRIC_ROWS, *HUNTER_STEPS, HUNTER_MUST_FIX,
+                HUNTER_NO_THRESHOLD, HUNTER_GATE, HUNTER_NON_BLOCKING, HUNTER_NON_BLOCKING_ACTION,
+                HUNTER_CRITICAL_HEADING, AGENT_DEFERRED_LINE,
+            )
+        )
+        and text.count(HUNTER_STEP9_NOTE) == 1
+        and text.count(HUNTER_FINDINGS_BLOCK) == 1
+        and "**CRITICAL Issues MUST be fixed" not in text
+        and "CRITICAL issues remain a workflow blocker" not in text
+        and "blocks ship" not in text
+        and "If MEDIUM issues found" not in text
+        and "MEDIUM issues for patterns.md" not in text
+        and "- [High issues: file:line" not in text,
+        "tighter loops P2 (D1): hunter findings had no severity line and its notes sat under Findings, where the fail-closed rule would block them",
+    ),
+    A(
+        "README: the router pauses for clarification, not for scope decisions",
+        ROOT / "README.md",
+        lambda text: pinned_line(text, README_PAUSE_LINE) and "pause for clarification or scope decisions" not in text,
+        "tighter loops P2 (D2): the scope question is gone",
+    ),
+    A(
+        "router-invariants: INV-005 is the whole-blocking-set rule",
+        ROOT / "docs" / "router-invariants.md",
+        lambda text: pinned_line(text, INV005_HEADING) and "Scope decision is a first-class BUILD pause" not in text,
+        "tighter loops P2 (D2): the invariant registry must match the rule",
+    ),
+    A(
+        "ADR 0003: blocking severity and the deferred wave",
+        ROOT / "docs" / "adr" / "0003-blocking-severity-and-deferred-wave.md",
+        contains_all("## Context", "## Decision", "## Rejected alternatives", "## Consequences", "the whole blocking set"),
+        "tighter loops P2: the severity gate is a hard-to-reverse, surprising trade-off",
+    ),
+    A(
         "doc-syncer: legacy ADR cleanup is propose-only, deletes are user-run",
         AGENTS / "doc-syncer.md",
         lambda text: "Never delete a file: you have no delete tool and Bash is not for `rm`" in text
@@ -4770,7 +5048,8 @@ ASSERTIONS = [
         lambda text: "before reporting zero findings (Zero-Finding Halt re-scan)" in text
         and "`APPROVE` for `code-reviewer`, `CLEAN` for `failure-hunter`" in text
         and "at least three positive assertions with file:line evidence" in text
-        and "Findings of any severity that do not block and that you don't fix in this pass (the router's non-blocking \"Minor\" class)" in text
+        and CODE_REVIEW_DEFERRED in text
+        and "the router's non-blocking \"Minor\" class" not in text
         and "appends every non-blocking item to" in text
         and "triage labels for received feedback, not the review severities above" in text
         and "before reporting CLEAN" not in text
