@@ -170,7 +170,7 @@ Terminal test: a workflow is terminal when its events log or `status_history` ho
 
 Scope-decision resume:
 
-- A legacy `[SCOPE-DECISION-PENDING: wf:{workflow_uuid} reason:{...}]` marker in `activeContext.md ## Decisions` (written by a pre-12.11 router) is removed from `## Decisions` and its REM-FIX created with `scope:ALL_ISSUES`; the router asks no scope question (`references/remediation-and-research.md` `### Scope resolution`).
+- A legacy `[SCOPE-DECISION-PENDING: wf:{workflow_uuid} reason:{...}]` marker in `activeContext.md ## Decisions` (written by a pre-12.11 router) is handled on resume before normal routing. When its `wf:` is terminal or out of scope, the router only removes the marker. Otherwise, on the same resume, it removes the marker from `## Decisions`, clears a `pending_gate` of `scope_decision` on that workflow, records `scope_decision_resolved` in `status_history`, creates the REM-FIX with `scope:ALL_ISSUES`, and stops. The router asks no scope question (`references/remediation-and-research.md` `### Scope resolution`).
 
 Safety rules:
 
@@ -475,7 +475,7 @@ Verdict extraction:
 
 1. Read the YAML block and take the verdict from its `STATUS` (`PLANNING_REVIEW_STATUS` for `plan-gap-reviewer`).
 2. If the YAML block is absent, the envelope on line 1, else the heading in the first 5 lines, only names the verdict to re-check.
-3. Extract `CRITICAL_ISSUES` from `### Critical Issues`, and HIGH findings from the reviewer's `### Findings` entries with `Severity: HIGH` and the hunter's `HIGH_ISSUES` field and its `### Findings` entries with `Severity: HIGH`.
+3. Extract CRITICAL findings from `### Critical Issues`, from `### Findings` entries with `Severity: CRITICAL`, and from a non-zero YAML `CRITICAL_ISSUES`, and HIGH findings from the reviewer's `### Findings` entries with `Severity: HIGH` and the hunter's `HIGH_ISSUES` field and its `### Findings` entries with `Severity: HIGH`.
 4. If the YAML block is absent or any required contract field is missing, whatever the envelope and heading say, run inline verification rather than approving; for TRIAGE and CODEBASE-HEALTH there is nothing to verify inline, so the router sets `failure_stop_gate` instead (see their workflow references; no Memory Update).
 5. Detect `SELF_REMEDIATED` from task state:
    - If the task remains `in_progress` and `blockedBy` is non-empty after the agent stops, treat it as self-remediated. This is `blockedBy` based, so it cannot fire in artifact-only mode; there the structured remediation fields decide.

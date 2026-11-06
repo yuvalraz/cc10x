@@ -16,15 +16,19 @@ round trip, a critical-only fix left the HIGH issues for another cycle, and
 MEDIUM findings either blocked a phase through rule 1b or slipped into Memory
 Notes `**Deferred:**` and were never fixed. The failure-hunter's findings
 carried no per-finding severity, so the router could not tell a MEDIUM from a
-coverage note.
+coverage note. Once every agent writes MEDIUM and LOW under `### Findings`,
+DEBUG's old rule 1b (auto-fix every non-blocking item) would reopen a fix cycle
+for a single LOW nit.
 
 ## Decision
 
 - **Blocking set (D1).** Every validated CRITICAL and HIGH finding from
-  `code-reviewer`, `failure-hunter` and `integration-verifier` (after
-  post-verifier finding validation), plus a non-PASS `SPEC_COMPLIANCE`, an
-  unresolved `CANNOT_VERIFY_CROSS_PHASE`, a verifier `FAIL` and a missing or
-  false TDD RED/GREEN. CRITICAL comes from `### Critical Issues`; HIGH from the
+  `code-reviewer` and `failure-hunter`, the `integration-verifier`'s
+  `### Critical Issues` (after post-verifier finding validation), plus a
+  non-PASS `SPEC_COMPLIANCE`, an unresolved `CANNOT_VERIFY_CROSS_PHASE`, a
+  verifier `FAIL` and a missing or false TDD RED/GREEN. CRITICAL comes from
+  `### Critical Issues`, `Severity: CRITICAL` entries and a non-zero YAML
+  `CRITICAL_ISSUES`; HIGH from the
   reviewer's `### Findings` entries with `Severity: HIGH` and from the hunter's
   `HIGH_ISSUES` field and `Severity: HIGH` entries. The verifier rates no
   severity; its `### Findings` are observations. Notes (the hunter's
@@ -40,8 +44,8 @@ coverage note.
 - **Deferred entries (D4).** `deferred_findings` entries are
   `{source, phase_id, finding, severity}` with `severity` one of `medium`, `low`
   or `minor`. BUILD writes `medium` or `low`; `minor` stays valid for QA and
-  older artifacts. DEBUG keeps auto-creating a REM-FIX for non-blocking items,
-  and REVIEW keeps its ask.
+  older artifacts.
+- **DEBUG (D4).** In DEBUG, MEDIUM auto-creates a REM-FIX and LOW is listed in the DEBUG report with no REM-FIX, so a single LOW nit no longer reopens a fix cycle. REVIEW keeps its ask.
 - **BUILD-DONE order (D10).** A standard build runs one deferred wave over the
   `medium` entries, then the mandatory final whole-branch review (its CRITICAL
   and HIGH get one fix wave), then the single finishing ask listing every LOW
@@ -73,6 +77,8 @@ coverage note.
   only, so a MEDIUM fixed by the wave is not also written to `patterns.md`.
 - The verifier handoff passes `**High Issues:**` for both agents, so every HIGH
   in the blocking set is validated.
+- CRITICAL is read from `### Critical Issues`, `Severity: CRITICAL` entries and a non-zero YAML `CRITICAL_ISSUES`; a reviewer `CHANGES_REQUESTED` or hunter `ISSUES_FOUND` with an empty extracted blocking set still blocks. The reviewer writes positive assertions and risk checks under `### Verified`, and the trivial-scope verifier writes its folded review under `### Folded Review` with a `Severity:` line per entry.
+- A reviewer HIGH now makes the verdict `CHANGES_REQUESTED`, so it also stops the QA harness review before `qa-execute` (`qa-workflow.md` *Harness review*) and makes a REVIEW workflow offer REVIEW-to-BUILD. Both are accepted.
 - Replay fixture `build-scope-gate.json` now expects `create_remfix` with
   `ALL_ISSUES` and no pending gate; INV-005 is the whole-blocking-set rule.
 - The deferred wave and the final review land in a later phase of the same

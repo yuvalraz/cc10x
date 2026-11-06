@@ -96,7 +96,7 @@ BUILD is sequential:
 **Complexity gradient (read `build_scope` from BUILD preparation step 4):**
 The router is still the sole entry point for every BUILD, but the task graph scales to the work. This is a deliberate gradient, not the retired unconditional QUICK path: trivial work earns a reduced graph; everything else pays the full chain.
 
-- `build_scope=trivial` → use the **reduced task graph** below: `component-builder` → `integration-verifier` → `Memory Update`. NO separate `code-reviewer` task, NO `failure-hunter` task, NO standalone `doc-syncer` task. The verifier still runs its FULL real proof path — never weaken the Pre-Completion Checklist, Proof Reconciliation, or Test Honesty Gates to "save time" on trivial work — and folds a brief review/edge-case pass into its report.
+- `build_scope=trivial` → use the **reduced task graph** below: `component-builder` → `integration-verifier` → `Memory Update`. NO separate `code-reviewer` task, NO `failure-hunter` task, NO standalone `doc-syncer` task. The verifier still runs its FULL real proof path — never weaken the Pre-Completion Checklist, Proof Reconciliation, or Test Honesty Gates to "save time" on trivial work — and folds a brief review/edge-case pass into its report under `### Folded Review`.
 - `build_scope=standard` (default, and always when a plan exists) → use the **full task graph** further below.
 
 **Escalation rule (trivial → full):** after the builder returns, if its Router Contract reports non-empty `SCOPE_INCREASES` or non-empty `BLOCKED_ITEMS`, the work was not actually trivial. Before advancing, promote the workflow to the full graph: create the `code-reviewer` task AND the `failure-hunter` task (both blocked by the builder — never skip the hunter on escalation), create the `doc-syncer` task (blocked by the verifier), re-block the verifier on `[reviewer_task_id, hunter_task_id]`, and, when this phase's graph carries a Memory Update task (only the LAST phase's does), re-block it on `doc_sync_task_id`. Persist `build_scope=standard` and an escalation entry in `status_history`. (The conversion note under the reduced graph below states the same rule — they are one rule, not two.)
@@ -114,7 +114,7 @@ TaskUpdate({ taskId: builder_task_id, addBlockedBy: [previous_phase_last_task_id
 
 TaskCreate({
   subject: "CC10X integration-verifier: Verify integration",
-  description: "wf:{workflow_uuid}\nkind:agent\norigin:router\nphase:build-verify\nplan:N/A\nscope:N/A\nreason:Trivial-path phase exit verification\n\nRun required checks for the change and report whether truths, artifacts, wiring, and exit criteria are satisfied. Fold a brief correctness/edge-case review into your report since no separate reviewer ran.",
+  description: "wf:{workflow_uuid}\nkind:agent\norigin:router\nphase:build-verify\nplan:N/A\nscope:N/A\nreason:Trivial-path phase exit verification\n\nRun required checks for the change and report whether truths, artifacts, wiring, and exit criteria are satisfied. Fold a brief correctness/edge-case review into your report under `### Folded Review`, one entry per finding with a `Severity:` line, since no separate reviewer ran.",
   activeForm: "Verifying integration"
 }) -> verifier_task_id
 TaskUpdate({ taskId: verifier_task_id, addBlockedBy: [builder_task_id] })
@@ -196,9 +196,9 @@ The finer per-TASK review cadence (one review per task rather than one per phase
 
 MEDIUM and LOW findings do not block a BUILD phase exit, and they must not silently evaporate — that violates the "no finding silently discarded" rule. The workflow artifact carries a `deferred_findings` array for exactly this:
 
-- When `code-reviewer` or `failure-hunter` reports a MEDIUM or LOW finding under `### Findings`, the router appends it to `deferred_findings` (each entry: `source` agent, `phase_id`, terse `finding`, and `severity` `medium` or `low`, from the agent's severity) and creates no REM-FIX for it. The blocking set (`remediation-and-research.md` `### Scope resolution`) still gates the phase; this array is only for the non-blocking remainder. The deferral is BUILD only: DEBUG auto-creates a REM-FIX for non-blocking findings (rule 1b). `severity` `minor` stays valid for QA entries and older artifacts.
+- When `code-reviewer` or `failure-hunter` reports a MEDIUM or LOW finding under `### Findings`, the router appends it to `deferred_findings` (each entry: `source` agent, `phase_id`, terse `finding`, and `severity` `medium` or `low`, from the agent's severity) and creates no REM-FIX for it. The blocking set (`remediation-and-research.md` `### Scope resolution`) still gates the phase; this array is only for the non-blocking remainder. The deferral is BUILD only: in DEBUG, MEDIUM auto-creates a REM-FIX and LOW is listed in the DEBUG report (rule 1b). `severity` `minor` stays valid for QA entries and older artifacts.
 - The array accumulates across phases for the whole workflow. Nothing consumes it mid-flight; it is surfaced once at BUILD-DONE (see the finishing block's triage step) so the user can decide explicitly: fix now, file as follow-up, or knowingly accept. No automatic action is taken on a deferred finding.
-- In the reduced task graph (`build_scope=trivial`) there is no separate reviewer, so the verifier's folded review/edge-case pass appends any MEDIUM or LOW leftovers to `deferred_findings` the same way.
+- In the reduced task graph (`build_scope=trivial`) there is no separate reviewer, so the verifier writes its folded review/edge-case pass under `### Folded Review`, one entry per finding with a `Severity:` line: a CRITICAL or HIGH entry is in the blocking set (rule 1a), and the router appends each MEDIUM or LOW entry to `deferred_findings` the same way (`source` `integration-verifier`).
 
 ### doc-syncer SKIPPED state
 

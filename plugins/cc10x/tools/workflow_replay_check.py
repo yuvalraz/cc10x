@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -1006,6 +1007,7 @@ def check_build_scope_gate(fixture: dict[str, Any]) -> None:
     require(expected.get("remfix_scope") == "ALL_ISSUES", "build-scope-gate: REM-FIX scope must be ALL_ISSUES")
     require(expected.get("pending_gate", "missing") is None, "build-scope-gate: pending gate must be null")
     deferred = expected["artifact_delta"].get("deferred_findings", [])
+    severities = Counter(entry.get("severity") for entry in deferred)
     require(
         len(deferred) == findings.get("medium_issues", 0) + findings.get("low_issues", 0),
         "build-scope-gate: deferred_findings must hold one entry per MEDIUM and LOW finding",
@@ -1019,6 +1021,10 @@ def check_build_scope_gate(fixture: dict[str, Any]) -> None:
             entry.get("severity") in {"medium", "low"},
             "build-scope-gate: deferred entry severity must be medium or low in BUILD",
         )
+    require(
+        severities["medium"] == findings.get("medium_issues", 0) and severities["low"] == findings.get("low_issues", 0),
+        "build-scope-gate: deferred severities must match medium_issues and low_issues",
+    )
 
 
 def check_build_remediation_loop(fixture: dict[str, Any]) -> None:

@@ -182,6 +182,13 @@ EVIDENCE:
 ### Findings
 - [observations]
 
+### Folded Review
+- (`build_scope=trivial` only; omit otherwise. One entry per finding; this block holds findings, never notes.)
+- Issue: [what is wrong, one line]
+- Severity: CRITICAL | HIGH | MEDIUM | LOW
+- Evidence: [file:line — quote]
+- Fix direction: [concise recommendation]
+
 ### Reviewer Finding Validation (when Previous Agent Findings present)
 For each CRITICAL/HIGH finding from code-reviewer or failure-hunter, report:
 - Finding: [restate + file:line]

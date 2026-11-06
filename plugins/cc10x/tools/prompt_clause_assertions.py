@@ -157,29 +157,45 @@ RULE_1A_ROW = (
 )
 RULE_1B_ROW = (
     "| 1b | Non-blocking (MEDIUM or LOW) findings | In BUILD, append MEDIUM and LOW findings to `deferred_findings` (no REM-FIX)."
-    " In DEBUG, auto-create a REM-FIX (unchanged: DEBUG has no BUILD-DONE to surface the array). In REVIEW, ask whether to start BUILD. |"
+    " In DEBUG, auto-create a REM-FIX for MEDIUM findings, and list LOW findings in the DEBUG report with no REM-FIX (DEBUG"
+    " has no BUILD-DONE to surface the array). In REVIEW, ask whether to start BUILD. |"
 )
 RULE_2_ROW = (
     "| 2 | Reviewer verdict is Approve but failure-hunter reports HIGH issues | Remediate: HIGH is in the blocking set, so rule 1a"
     " creates the REM-FIX. No ask. |"
 )
 SCOPE_BLOCKING_SET = (
-    "- The blocking set of a BUILD phase is every validated CRITICAL and HIGH finding from `code-reviewer`, `failure-hunter`"
-    " and `integration-verifier` (after post-verifier finding validation), plus the non-severity gates that already block:"
-    " a non-PASS `SPEC_COMPLIANCE`, an unresolved `CANNOT_VERIFY_CROSS_PHASE`, a verifier `FAIL`, a missing or false TDD"
-    " RED/GREEN. MEDIUM and LOW never block a BUILD phase."
+    "- The blocking set of a BUILD phase is every validated CRITICAL and HIGH finding from `code-reviewer` and"
+    " `failure-hunter`, the `integration-verifier`'s `### Critical Issues` (after post-verifier finding validation), plus"
+    " the non-severity gates that already block: a non-PASS `SPEC_COMPLIANCE`, an unresolved `CANNOT_VERIFY_CROSS_PHASE`,"
+    " a verifier `FAIL`, a missing or false TDD RED/GREEN. MEDIUM and LOW never block a BUILD phase."
+)
+SCOPE_CATCH_ALL = (
+    "- Fail closed: a reviewer `CHANGES_REQUESTED` or a hunter `ISSUES_FOUND` whose extracted blocking set is empty is"
+    " itself blocking; the REM-FIX carries that agent's whole report."
 )
 SCOPE_SOURCES = (
-    "- Severity sources. CRITICAL: each agent's `### Critical Issues`. HIGH: the reviewer's `### Findings` entries with"
-    " `Severity: HIGH`, and the hunter's `HIGH_ISSUES` field and its `### Findings` entries with `Severity: HIGH`. MEDIUM and"
-    " LOW: the reviewer's and the hunter's `### Findings` entries with `Severity: MEDIUM` or `Severity: LOW`. The verifier"
-    " rates no severity: its blocking input is `STATUS: FAIL` and `### Critical Issues`, and its `### Findings` are"
-    " observations that never block and are never deferred."
+    "- Severity sources. CRITICAL: each agent's `### Critical Issues`, the reviewer's and the hunter's `### Findings` entries"
+    " with `Severity: CRITICAL`, and a non-zero YAML `CRITICAL_ISSUES` from the reviewer or the hunter. HIGH: the reviewer's"
+    " `### Findings` entries with `Severity: HIGH`, and the hunter's `HIGH_ISSUES` field and its `### Findings` entries with"
+    " `Severity: HIGH`. MEDIUM and LOW: the reviewer's and the hunter's `### Findings` entries with `Severity: MEDIUM` or"
+    " `Severity: LOW`. The verifier rates no severity in its standard report: its blocking input is `STATUS: FAIL` and"
+    " `### Critical Issues`, and its `### Findings` are observations that never block and are never deferred."
+)
+SCOPE_FOLDED = (
+    "- Folded review (`build_scope=trivial` only): the verifier writes its folded review under `### Folded Review`, one"
+    " entry per finding with a `Severity:` line. An entry there with `Severity: CRITICAL` or `Severity: HIGH` is in the"
+    " blocking set; one with `Severity: MEDIUM` or `Severity: LOW` is deferred to `deferred_findings`."
 )
 SCOPE_NOTES = (
-    "- Notes are not findings. Coverage, pattern and recommendation notes (the hunter writes them under `### Coverage`) never"
-    " block and are never deferred. An entry under the reviewer's or the hunter's `### Findings` heading whose severity is"
-    " missing or an unknown word is blocking (fail closed)."
+    "- Notes are not findings. Coverage, pattern, recommendation and verification notes (the hunter writes them under"
+    " `### Coverage`, the reviewer under `### Verified`) never block and are never deferred. An entry under the reviewer's"
+    " or the hunter's `### Findings` heading, or the verifier's `### Folded Review`, whose severity is missing or an unknown"
+    " word is blocking (fail closed)."
+)
+SCOPE_NO_DOUBLE_ROUTE = (
+    "- A finding already in the blocking set through a non-severity gate is never also deferred: a reviewer `### Findings`"
+    " entry with `Category: spec mismatch` while `SPEC_COMPLIANCE` is non-PASS goes to the REM-FIX whatever its severity."
 )
 SCOPE_ONE_WAVE = (
     "- Every BUILD REM-FIX takes the whole blocking set in one wave with `scope:ALL_ISSUES`, and the router asks no scope"
@@ -191,16 +207,20 @@ SCOPE_ENVELOPE = (
 )
 SCOPE_LEGACY = (
     "- Legacy marker: a `[SCOPE-DECISION-PENDING: ...]` marker that a pre-12.11 router left in `activeContext.md ## Decisions`"
-    " is resolved on resume as `SKILL.md` §4 `Scope-decision resume:` says (marker removed, REM-FIX created with"
-    " `scope:ALL_ISSUES`)."
+    " is resolved on resume as `SKILL.md` §4 `Scope-decision resume:` says (marker removed and, unless its `wf:` is"
+    " terminal or out of scope, REM-FIX created with `scope:ALL_ISSUES`)."
 )
 ROUTER_LEGACY_RESUME = (
     "- A legacy `[SCOPE-DECISION-PENDING: wf:{workflow_uuid} reason:{...}]` marker in `activeContext.md ## Decisions` (written"
-    " by a pre-12.11 router) is removed from `## Decisions` and its REM-FIX created with `scope:ALL_ISSUES`; the router asks"
-    " no scope question (`references/remediation-and-research.md` `### Scope resolution`)."
+    " by a pre-12.11 router) is handled on resume before normal routing. When its `wf:` is terminal or out of scope, the"
+    " router only removes the marker. Otherwise, on the same resume, it removes the marker from `## Decisions`, clears a"
+    " `pending_gate` of `scope_decision` on that workflow, records `scope_decision_resolved` in `status_history`, creates"
+    " the REM-FIX with `scope:ALL_ISSUES`, and stops. The router asks no scope question"
+    " (`references/remediation-and-research.md` `### Scope resolution`)."
 )
 ROUTER_STEP3 = (
-    "3. Extract `CRITICAL_ISSUES` from `### Critical Issues`, and HIGH findings from the reviewer's `### Findings` entries with"
+    "3. Extract CRITICAL findings from `### Critical Issues`, from `### Findings` entries with `Severity: CRITICAL`, and"
+    " from a non-zero YAML `CRITICAL_ISSUES`, and HIGH findings from the reviewer's `### Findings` entries with"
     " `Severity: HIGH` and the hunter's `HIGH_ISSUES` field and its `### Findings` entries with `Severity: HIGH`."
 )
 ROUTER_HANDOFF_REVIEWER_HIGH = '  {reviewer high issues or "None"}'
@@ -219,8 +239,22 @@ BUILD_DEFERRED_RULE = (
     " to `deferred_findings` (each entry: `source` agent, `phase_id`, terse `finding`, and `severity` `medium` or `low`, from"
     " the agent's severity) and creates no REM-FIX for it. The blocking set (`remediation-and-research.md` `### Scope"
     " resolution`) still gates the phase; this array is only for the non-blocking remainder. The deferral is BUILD only:"
-    " DEBUG auto-creates a REM-FIX for non-blocking findings (rule 1b). `severity` `minor` stays valid for QA entries and"
-    " older artifacts."
+    " in DEBUG, MEDIUM auto-creates a REM-FIX and LOW is listed in the DEBUG report (rule 1b). `severity` `minor` stays"
+    " valid for QA entries and older artifacts."
+)
+BUILD_TRIVIAL_FOLDED = (
+    "- In the reduced task graph (`build_scope=trivial`) there is no separate reviewer, so the verifier writes its folded"
+    " review/edge-case pass under `### Folded Review`, one entry per finding with a `Severity:` line: a CRITICAL or HIGH"
+    " entry is in the blocking set (rule 1a), and the router appends each MEDIUM or LOW entry to `deferred_findings` the"
+    " same way (`source` `integration-verifier`)."
+)
+VERIFIER_FOLDED_BLOCK = (
+    "### Folded Review\n"
+    "- (`build_scope=trivial` only; omit otherwise. One entry per finding; this block holds findings, never notes.)\n"
+    "- Issue: [what is wrong, one line]\n"
+    "- Severity: CRITICAL | HIGH | MEDIUM | LOW\n"
+    "- Evidence: [file:line — quote]\n"
+    "- Fix direction: [concise recommendation]\n"
 )
 POLICY_DEFERRED_BULLET = (
     "- `deferred_findings` accumulates non-blocking findings across phases (each entry: `source`, `phase_id`, `finding`,"
@@ -231,8 +265,35 @@ POLICY_DEFERRED_BULLET = (
 )
 POLICY_REVIEWER_OVERRIDE = "| code-reviewer | `APPROVE` + critical or high issues becomes `CHANGES_REQUESTED` |"
 REVIEWER_RULE = (
-    "**Rule:** CRITICAL or HIGH findings → CHANGES_REQUESTED regardless of other dimensions; MEDIUM and LOW alone never"
-    " change the verdict (the router defers them)."
+    "**Rule:** CRITICAL or HIGH findings → CHANGES_REQUESTED regardless of other dimensions; MEDIUM and LOW severity"
+    " findings alone never change the verdict; non-severity gates (`SPEC_COMPLIANCE`, `CANNOT_VERIFY_CROSS_PHASE`) still do."
+)
+REVIEWER_VERIFIED_BLOCK = (
+    "### Verified\n"
+    "- [file:line] - [positive assertion, named hypothesis checked, or outside-diff risk checked, and what you found]."
+    " Never a finding: a finding goes under `### Findings` with its `Severity:` line.\n"
+)
+REVIEWER_OUTSIDE_DIFF = (
+    "- Inspect code OUTSIDE the diff ONLY to evaluate a concrete NAMED risk. One focused check per named risk, and name both"
+    " the risk and what you checked (\"risk: lock-ordering inversion; checked: the two other acquire sites in mutex_pool.c"
+    " hold the same order\"); a check that found nothing goes under `### Verified`. General exploration outside the diff is"
+    " forbidden."
+)
+REVIEWER_ZERO_FINDING = (
+    "   **Zero-Finding Gate (MANDATORY):** If ALL review passes produce zero findings (no CRITICAL, HIGH, or MEDIUM across"
+    " every dimension): you MUST (1) verify you read the changed files, not just diffstat, (2) name at least three specific"
+    " positive assertions with file:line evidence under `### Verified` (\"auth is correct because X at file:line\"); the"
+    " router runs fallback inline verification on a zero-finding APPROVE with fewer than 3 file:line evidence citations,"
+    " (3) if zero findings survive the positive-assertion pass, set CONFIDENCE to exactly 70 and note \"Zero findings —"
+    " low-confidence approval\" in SIGNAL_SCORES — one number, overriding the formula's output for this case. A"
+    " zero-finding APPROVE that meets (1)-(3) is valid at 70; the per-finding `>=80` reporting floor is unchanged."
+)
+REVIEWER_DOUBT_THEATER = (
+    "   **Doubt theater check (self-audit):** if you ran ≥2 review passes and produced zero actionable classifications (no"
+    " findings at all, only broad \"looks clean\" or \"code is well-structured\" statements), you are validating, not"
+    " reviewing. Re-run with a named hypothesis per pass (\"Pass 1 hypothesis: the auth boundary at file:line likely misses"
+    " a role check\") and report what you checked under `### Verified`. A zero-finding verdict without a named hypothesis is"
+    " under-supported — it reads as a rubber stamp, not a review."
 )
 REVIEWER_WHY = (
     "**Why this matters:** Router reads heading (`## Review: Approve/Changes Requested`) + reads `### Critical Issues` and"
@@ -246,8 +307,8 @@ REVIEWER_BUILD_SCOPE = (
 )
 REVIEWER_NON_BLOCKING = "**If only MEDIUM or LOW issues are found:**"
 REVIEWER_NON_BLOCKING_ACTION = (
-    "→ Report them under `### Findings` with their severity; the router defers them (BUILD) or fixes them (DEBUG). Do NOT"
-    " create a task."
+    "→ Report them under `### Findings` with their severity; the router defers them (BUILD), or fixes MEDIUM and lists LOW"
+    " (DEBUG). Do NOT create a task."
 )
 AGENT_DEFERRED_LINE = (
     "- **Deferred:** [follow-ups that are not findings; MEDIUM and LOW findings go under `### Findings`, never here]"
@@ -294,11 +355,29 @@ HUNTER_NON_BLOCKING_ACTION = "→ Report them under `### Findings`; the router d
 HUNTER_CRITICAL_HEADING = "### Critical Issues (blocks the phase; router must route fix)"
 HUNTER_FINDINGS_BLOCK = (
     "### Findings\n"
+    "- Issue: [what fails silently, one line]\n"
     "- Severity: CRITICAL | HIGH | MEDIUM | LOW\n"
     "- Evidence: [file:line — quote]\n"
     "- Fix direction: [concise recommendation]\n"
     "\n"
     "### Coverage\n"
+)
+ADR_DEBUG_DECISION = (
+    "- **DEBUG (D4).** In DEBUG, MEDIUM auto-creates a REM-FIX and LOW is listed in the DEBUG report with no REM-FIX, so"
+    " a single LOW nit no longer reopens a fix cycle. REVIEW keeps its ask."
+)
+ADR_QA_REVIEW_CONSEQUENCE = (
+    "- A reviewer HIGH now makes the verdict `CHANGES_REQUESTED`, so it also stops the QA harness review before"
+    " `qa-execute` (`qa-workflow.md` *Harness review*) and makes a REVIEW workflow offer REVIEW-to-BUILD. Both are accepted."
+)
+ADR_ROUTING_CONSEQUENCE = (
+    "- CRITICAL is read from `### Critical Issues`, `Severity: CRITICAL` entries and a non-zero YAML `CRITICAL_ISSUES`; a"
+    " reviewer `CHANGES_REQUESTED` or hunter `ISSUES_FOUND` with an empty extracted blocking set still blocks. The reviewer"
+    " writes positive assertions and risk checks under `### Verified`, and the trivial-scope verifier writes its folded"
+    " review under `### Folded Review` with a `Severity:` line per entry."
+)
+QA_REVIEW_STOP = (
+    "A `qa-review` verdict of `CHANGES_REQUESTED`, or a `qa-hunt` non-clean verdict carrying a blocking finding"
 )
 CODE_REVIEW_DEFERRED = (
     "MEDIUM and LOW findings, the router's non-blocking class (only CRITICAL and HIGH block), are NOT dropped, but you do"
@@ -4332,7 +4411,10 @@ ASSERTIONS = [
         ROUTER_REFS / "remediation-and-research.md",
         lambda text: all(
             pinned_line(text, line)
-            for line in (SCOPE_BLOCKING_SET, SCOPE_SOURCES, SCOPE_NOTES, SCOPE_ONE_WAVE, SCOPE_ENVELOPE, SCOPE_LEGACY)
+            for line in (
+                SCOPE_BLOCKING_SET, SCOPE_CATCH_ALL, SCOPE_SOURCES, SCOPE_FOLDED, SCOPE_NOTES, SCOPE_NO_DOUBLE_ROUTE,
+                SCOPE_ONE_WAVE, SCOPE_ENVELOPE, SCOPE_LEGACY,
+            )
         )
         and "before the blocking set is computed" in text
         and "before any REM-FIX scope is computed" not in text
@@ -4367,6 +4449,8 @@ ASSERTIONS = [
         ROUTER_REFS / "build-workflow.md",
         lambda text: pinned_line(text, BUILD_DEFERRED_HEADING)
         and pinned_line(text, BUILD_DEFERRED_RULE)
+        and pinned_line(text, BUILD_TRIVIAL_FOLDED)
+        and "appends any MEDIUM or LOW leftovers" not in text
         and "### Deferred Minor findings roll-up" not in text
         and "raises a Minor finding that does NOT block" not in text,
         "tighter loops P2 (D4): deferred entries carry the agent's severity",
@@ -4387,8 +4471,12 @@ ASSERTIONS = [
             for line in (
                 REVIEWER_RULE, REVIEWER_WHY, REVIEWER_NO_BLOCKING, REVIEWER_BLOCKING, REVIEWER_BUILD_SCOPE,
                 REVIEWER_NON_BLOCKING, REVIEWER_NON_BLOCKING_ACTION, AGENT_DEFERRED_LINE,
+                REVIEWER_OUTSIDE_DIFF, REVIEWER_ZERO_FINDING, REVIEWER_DOUBT_THEATER,
             )
         )
+        and text.count(REVIEWER_VERIFIED_BLOCK) == 1
+        and text.index(REVIEWER_VERIFIED_BLOCK) > text.index("### Findings\n- Category:")
+        and "the router defers them)." not in text
         and "**Rule:** CRITICAL failures → CHANGES_REQUESTED" not in text
         and "counts `### Critical Issues` entries for blocking decisions" not in text
         and "but no CRITICAL ones" not in text
@@ -4434,8 +4522,38 @@ ASSERTIONS = [
     A(
         "ADR 0003: blocking severity and the deferred wave",
         ROOT / "docs" / "adr" / "0003-blocking-severity-and-deferred-wave.md",
-        contains_all("## Context", "## Decision", "## Rejected alternatives", "## Consequences", "the whole blocking set"),
+        lambda text: contains_all(
+            "## Context", "## Decision", "## Rejected alternatives", "## Consequences", "the whole blocking set"
+        )(text)
+        and all(pinned_line(text, line) for line in (ADR_DEBUG_DECISION, ADR_QA_REVIEW_CONSEQUENCE, ADR_ROUTING_CONSEQUENCE))
+        and "DEBUG keeps auto-creating a REM-FIX for non-blocking items" not in text,
         "tighter loops P2: the severity gate is a hard-to-reverse, surprising trade-off",
+    ),
+    A(
+        "integration-verifier: the trivial-scope folded review is a Severity-rated Folded Review block",
+        AGENTS / "integration-verifier.md",
+        lambda text: text.count(VERIFIER_FOLDED_BLOCK) == 1,
+        "tighter loops P2 REM-FIX: the trivial path deferred verifier leftovers the scope rule said were never deferred",
+    ),
+    A(
+        "qa-workflow: a reviewer CHANGES_REQUESTED (now CRITICAL or HIGH) stops the harness review, as ADR 0003 records",
+        ROUTER_REFS / "qa-workflow.md",
+        lambda text: QA_REVIEW_STOP in " ".join(text.split())
+        and "stops the route at this phase" in " ".join(text.split())
+        and pinned_line(read(AGENTS / "code-reviewer.md"), REVIEWER_RULE)
+        and pinned_line(read(ROOT / "docs" / "adr" / "0003-blocking-severity-and-deferred-wave.md"), ADR_QA_REVIEW_CONSEQUENCE),
+        "tighter loops P2 REM-FIX: HIGH -> CHANGES_REQUESTED also stops qa-review; the effect is accepted and recorded",
+    ),
+    A(
+        "CHANGELOG: the severity-gate bullet names the DEBUG split, the QA and REVIEW effect, and the routing fixes",
+        ROOT / "CHANGELOG.md",
+        contains_all(
+            "In DEBUG, MEDIUM auto-creates a REM-FIX and LOW is listed in the DEBUG report",
+            "also stops the QA harness review",
+            "### Verified",
+            "### Folded Review",
+        ),
+        "tighter loops P2 REM-FIX: the release note must match the rule",
     ),
     A(
         "doc-syncer: legacy ADR cleanup is propose-only, deletes are user-run",

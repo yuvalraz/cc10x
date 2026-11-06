@@ -200,6 +200,7 @@ MEMORY_NOTES:
 - [file:line] - Empty catch → Add logging + notification
 
 ### Findings
+- Issue: [what fails silently, one line]
 - Severity: CRITICAL | HIGH | MEDIUM | LOW
 - Evidence: [file:line — quote]
 - Fix direction: [concise recommendation]
