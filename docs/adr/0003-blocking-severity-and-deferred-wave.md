@@ -37,15 +37,16 @@ for a single LOW nit.
 - **One wave (D2).** A BUILD REM-FIX always takes the whole blocking set with
   `scope:ALL_ISSUES`. `CRITICAL_ONLY` stays in the `scope:` enum and in
   `REMEDIATION_SCOPE_REQUESTED` only so pre-12.11 tasks parse; a legacy
-  `[SCOPE-DECISION-PENDING]` marker resumes as an `ALL_ISSUES` REM-FIX.
+  `[SCOPE-DECISION-PENDING]` marker, or a leftover `pending_gate` of
+  `scope_decision`, resumes as an `ALL_ISSUES` REM-FIX.
 - **Envelope unchanged (D3).** The line-1 envelope `b`/`cr` keep counting
   CRITICAL only; the router computes the blocking set from severities, never
-  from `b`.
+  from `b` or `REMEDIATION_NEEDED`.
 - **Deferred entries (D4).** `deferred_findings` entries are
   `{source, phase_id, finding, severity}` with `severity` one of `medium`, `low`
   or `minor`. BUILD writes `medium` or `low`; `minor` stays valid for QA and
   older artifacts.
-- **DEBUG (D4).** In DEBUG, MEDIUM auto-creates a REM-FIX and LOW is listed in the DEBUG report with no REM-FIX, so a single LOW nit no longer reopens a fix cycle. REVIEW keeps its ask.
+- **DEBUG (D4).** In DEBUG, MEDIUM auto-creates a REM-FIX and LOW is listed under the `[DEBUG-RESET]` summary and in the completion message with no REM-FIX, so a single LOW nit no longer reopens a fix cycle. REVIEW keeps its ask.
 - **BUILD-DONE order (D10).** A standard build runs one deferred wave over the
   `medium` entries, then the mandatory final whole-branch review (its CRITICAL
   and HIGH get one fix wave), then the single finishing ask listing every LOW

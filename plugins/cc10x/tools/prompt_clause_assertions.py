@@ -157,8 +157,9 @@ RULE_1A_ROW = (
 )
 RULE_1B_ROW = (
     "| 1b | Non-blocking (MEDIUM or LOW) findings | In BUILD, append MEDIUM and LOW findings to `deferred_findings` (no REM-FIX)."
-    " In DEBUG, auto-create a REM-FIX for MEDIUM findings, and list LOW findings in the DEBUG report with no REM-FIX (DEBUG"
-    " has no BUILD-DONE to surface the array). In REVIEW, ask whether to start BUILD. |"
+    " In DEBUG, auto-create a REM-FIX for MEDIUM findings, and list LOW findings under the `[DEBUG-RESET]` summary and in"
+    " the completion message (`SKILL.md` §13) with no REM-FIX (DEBUG has no BUILD-DONE to surface the array). In REVIEW,"
+    " ask whether to start BUILD. |"
 )
 RULE_2_ROW = (
     "| 2 | Reviewer verdict is Approve but failure-hunter reports HIGH issues | Remediate: HIGH is in the blocking set, so rule 1a"
@@ -172,7 +173,7 @@ SCOPE_BLOCKING_SET = (
 )
 SCOPE_CATCH_ALL = (
     "- Fail closed: a reviewer `CHANGES_REQUESTED` or a hunter `ISSUES_FOUND` whose extracted blocking set is empty is"
-    " itself blocking; the REM-FIX carries that agent's whole report."
+    " itself blocking; the REM-FIX carries that agent's report minus the entries already deferred to `deferred_findings`."
 )
 SCOPE_SOURCES = (
     "- Severity sources. CRITICAL: each agent's `### Critical Issues`, the reviewer's and the hunter's `### Findings` entries"
@@ -203,19 +204,24 @@ SCOPE_ONE_WAVE = (
     " the value stays in the enum only so pre-12.11 tasks still parse."
 )
 SCOPE_ENVELOPE = (
-    "- The router computes the blocking set from finding severities, never from the envelope `b`, which counts CRITICAL only."
+    "- The router computes the blocking set from finding severities, never from the envelope `b` or `REMEDIATION_NEEDED`"
+    " (`b` counts CRITICAL only)."
 )
 SCOPE_LEGACY = (
-    "- Legacy marker: a `[SCOPE-DECISION-PENDING: ...]` marker that a pre-12.11 router left in `activeContext.md ## Decisions`"
-    " is resolved on resume as `SKILL.md` §4 `Scope-decision resume:` says (marker removed and, unless its `wf:` is"
-    " terminal or out of scope, REM-FIX created with `scope:ALL_ISSUES`)."
+    "- Legacy scope decision: a `[SCOPE-DECISION-PENDING: ...]` marker that a pre-12.11 router left in `activeContext.md"
+    " ## Decisions`, or a non-terminal artifact whose `pending_gate` is `scope_decision` with no marker, is resolved on"
+    " resume as `SKILL.md` §4 `Scope-decision resume:` says (marker removed and, unless its `wf:` is terminal or out of"
+    " scope, one REM-FIX created with `scope:ALL_ISSUES` for that review's blocking set, its MEDIUM and LOW appended to"
+    " `deferred_findings`)."
 )
 ROUTER_LEGACY_RESUME = (
     "- A legacy `[SCOPE-DECISION-PENDING: wf:{workflow_uuid} reason:{...}]` marker in `activeContext.md ## Decisions` (written"
-    " by a pre-12.11 router) is handled on resume before normal routing. When its `wf:` is terminal or out of scope, the"
-    " router only removes the marker. Otherwise, on the same resume, it removes the marker from `## Decisions`, clears a"
+    " by a pre-12.11 router), or a non-terminal artifact whose `pending_gate` is `scope_decision` with no marker, is"
+    " handled on resume before normal routing. When the marker's `wf:` is terminal or out of scope, the router only removes"
+    " the marker. Otherwise, on the same resume, it removes the marker from `## Decisions` when there is one, clears the"
     " `pending_gate` of `scope_decision` on that workflow, records `scope_decision_resolved` in `status_history`, creates"
-    " the REM-FIX with `scope:ALL_ISSUES`, and stops. The router asks no scope question"
+    " the REM-FIX with `scope:ALL_ISSUES` for that review's blocking set, appends that review's MEDIUM and LOW findings to"
+    " `deferred_findings`, and stops. The router asks no scope question"
     " (`references/remediation-and-research.md` `### Scope resolution`)."
 )
 ROUTER_STEP3 = (
@@ -225,6 +231,36 @@ ROUTER_STEP3 = (
 )
 ROUTER_HANDOFF_REVIEWER_HIGH = '  {reviewer high issues or "None"}'
 ROUTER_HANDOFF_HUNTER_HIGH = '  {hunter high issues or "None / not in this workflow"}'
+ROUTER_PERSIST_FINDINGS = (
+    "   - every CRITICAL and HIGH entry from `code-reviewer` and `failure-hunter`, in `results.reviewer` and"
+    " `results.hunter`, each with its finding text and its file:line quote as the agent wrote them (never a count alone)"
+)
+ROUTER_HANDOFF_RENDER = (
+    "- Read `results.reviewer` and `results.hunter` from the workflow artifact, and render the Critical Issues and High"
+    " Issues blocks below from the entries persisted there (after-agent step 6), one per line: the finding text and its"
+    " file:line quote."
+)
+ROUTER_HANDOFF_NO_QUOTE = (
+    "  A finding listed here with no file:line quote is validated `degraded` (kept in the blocking set), never `false`."
+)
+VERIFIER_NO_QUOTE = (
+    "A finding handed over with no file:line quote at all is `validated: degraded`, never `false`."
+)
+ROUTER_DEBUG_LOW = (
+    "- List each LOW finding of the workflow (source, finding, file:line) under that `[DEBUG-RESET]` summary in"
+    " `activeContext.md ## Recent Changes` and in the completion message: in DEBUG a LOW gets no REM-FIX"
+    " (`references/remediation-and-research.md` rule 1b), and this list is where it goes."
+)
+DEBUG_WORKFLOW_LOW = (
+    "LOW findings get no REM-FIX in DEBUG (`remediation-and-research.md` rule 1b). At memory finalization the router lists"
+    " each one (source, finding, file:line) under the `[DEBUG-RESET]` summary in `activeContext.md ## Recent Changes` and"
+    " in the completion message (`SKILL.md` §13 For DEBUG)."
+)
+QA_NON_BLOCKING_CLASS = (
+    "  QA's non-blocking class is the MEDIUM and LOW findings from `qa-review` or `qa-hunt`; those findings, and"
+    " `HARNESS_ISSUES` that do not warrant a re-build, append to the"
+)
+REVIEWER_REMEDIATION_REASON = 'REMEDIATION_REASON: "[top CRITICAL or HIGH issue]" | None'
 ROUTER_POST_VERIFIER = (
     "This gate runs BEFORE the blocking set is computed (`references/remediation-and-research.md` `### Scope resolution`),"
     " so the blocking set is computed over validated findings only."
@@ -239,8 +275,8 @@ BUILD_DEFERRED_RULE = (
     " to `deferred_findings` (each entry: `source` agent, `phase_id`, terse `finding`, and `severity` `medium` or `low`, from"
     " the agent's severity) and creates no REM-FIX for it. The blocking set (`remediation-and-research.md` `### Scope"
     " resolution`) still gates the phase; this array is only for the non-blocking remainder. The deferral is BUILD only:"
-    " in DEBUG, MEDIUM auto-creates a REM-FIX and LOW is listed in the DEBUG report (rule 1b). `severity` `minor` stays"
-    " valid for QA entries and older artifacts."
+    " in DEBUG, MEDIUM auto-creates a REM-FIX and LOW is listed under the `[DEBUG-RESET]` summary and in the completion"
+    " message (rule 1b). `severity` `minor` stays valid for QA entries and older artifacts."
 )
 BUILD_TRIVIAL_FOLDED = (
     "- In the reduced task graph (`build_scope=trivial`) there is no separate reviewer, so the verifier writes its folded"
@@ -266,7 +302,8 @@ POLICY_DEFERRED_BULLET = (
 POLICY_REVIEWER_OVERRIDE = "| code-reviewer | `APPROVE` + critical or high issues becomes `CHANGES_REQUESTED` |"
 REVIEWER_RULE = (
     "**Rule:** CRITICAL or HIGH findings → CHANGES_REQUESTED regardless of other dimensions; MEDIUM and LOW severity"
-    " findings alone never change the verdict; non-severity gates (`SPEC_COMPLIANCE`, `CANNOT_VERIFY_CROSS_PHASE`) still do."
+    " findings alone never change the verdict; a non-PASS `SPEC_COMPLIANCE` still does; `CANNOT_VERIFY_CROSS_PHASE` never"
+    " changes the verdict (the router reconciles it)."
 )
 REVIEWER_VERIFIED_BLOCK = (
     "### Verified\n"
@@ -308,7 +345,7 @@ REVIEWER_BUILD_SCOPE = (
 REVIEWER_NON_BLOCKING = "**If only MEDIUM or LOW issues are found:**"
 REVIEWER_NON_BLOCKING_ACTION = (
     "→ Report them under `### Findings` with their severity; the router defers them (BUILD), or fixes MEDIUM and lists LOW"
-    " (DEBUG). Do NOT create a task."
+    " under the `[DEBUG-RESET]` summary (DEBUG). Do NOT create a task."
 )
 AGENT_DEFERRED_LINE = (
     "- **Deferred:** [follow-ups that are not findings; MEDIUM and LOW findings go under `### Findings`, never here]"
@@ -351,7 +388,9 @@ HUNTER_GATE = (
     " fixed."
 )
 HUNTER_NON_BLOCKING = "**If only MEDIUM or LOW issues are found (non-blocking):**"
-HUNTER_NON_BLOCKING_ACTION = "→ Report them under `### Findings`; the router defers them. Do NOT create a task."
+HUNTER_NON_BLOCKING_ACTION = (
+    "→ MEDIUM and LOW alone: `STATUS: CLEAN`, listed under `### Findings`; the router defers them. Do NOT create a task."
+)
 HUNTER_CRITICAL_HEADING = "### Critical Issues (blocks the phase; router must route fix)"
 HUNTER_FINDINGS_BLOCK = (
     "### Findings\n"
@@ -363,8 +402,8 @@ HUNTER_FINDINGS_BLOCK = (
     "### Coverage\n"
 )
 ADR_DEBUG_DECISION = (
-    "- **DEBUG (D4).** In DEBUG, MEDIUM auto-creates a REM-FIX and LOW is listed in the DEBUG report with no REM-FIX, so"
-    " a single LOW nit no longer reopens a fix cycle. REVIEW keeps its ask."
+    "- **DEBUG (D4).** In DEBUG, MEDIUM auto-creates a REM-FIX and LOW is listed under the `[DEBUG-RESET]` summary and in"
+    " the completion message with no REM-FIX, so a single LOW nit no longer reopens a fix cycle. REVIEW keeps its ask."
 )
 ADR_QA_REVIEW_CONSEQUENCE = (
     "- A reviewer HIGH now makes the verdict `CHANGES_REQUESTED`, so it also stops the QA harness review before"
@@ -4427,6 +4466,7 @@ ASSERTIONS = [
         SKILLS / "cc10x-router" / "SKILL.md",
         lambda text: pinned_line(text, "Scope-decision resume:")
         and pinned_line(text, ROUTER_LEGACY_RESUME)
+        and pinned_line(text, ROUTER_DEBUG_LOW)
         and "`critical only` -> create the pending REM-FIX" not in text
         and "Fix critical only (Recommended)" not in text,
         "tighter loops P2 (D2): no scope question; a pre-12.11 marker still resumes",
@@ -4439,6 +4479,9 @@ ASSERTIONS = [
         and text.count("**Critical Issues:**") == 2
         and pinned_line(text, ROUTER_HANDOFF_REVIEWER_HIGH)
         and pinned_line(text, ROUTER_HANDOFF_HUNTER_HIGH)
+        and pinned_line(text, ROUTER_PERSIST_FINDINGS)
+        and pinned_line(text, ROUTER_HANDOFF_RENDER)
+        and pinned_line(text, ROUTER_HANDOFF_NO_QUOTE)
         and ROUTER_POST_VERIFIER in text
         and "`CRITICAL_ONLY` / `ALL_ISSUES` scope is computed" not in text
         and pinned_line(text, ROUTER_TODO_RULE),
@@ -4471,9 +4514,11 @@ ASSERTIONS = [
             for line in (
                 REVIEWER_RULE, REVIEWER_WHY, REVIEWER_NO_BLOCKING, REVIEWER_BLOCKING, REVIEWER_BUILD_SCOPE,
                 REVIEWER_NON_BLOCKING, REVIEWER_NON_BLOCKING_ACTION, AGENT_DEFERRED_LINE,
-                REVIEWER_OUTSIDE_DIFF, REVIEWER_ZERO_FINDING, REVIEWER_DOUBT_THEATER,
+                REVIEWER_OUTSIDE_DIFF, REVIEWER_ZERO_FINDING, REVIEWER_DOUBT_THEATER, REVIEWER_REMEDIATION_REASON,
             )
         )
+        and "`CANNOT_VERIFY_CROSS_PHASE`) still do" not in text
+        and '"[top critical issue]"' not in text
         and text.count(REVIEWER_VERIFIED_BLOCK) == 1
         and text.index(REVIEWER_VERIFIED_BLOCK) > text.index("### Findings\n- Category:")
         and "the router defers them)." not in text
@@ -4536,10 +4581,41 @@ ASSERTIONS = [
         "tighter loops P2 REM-FIX: the trivial path deferred verifier leftovers the scope rule said were never deferred",
     ),
     A(
+        "integration-verifier: a handed-over finding with no quote is validated degraded, never false",
+        AGENTS / "integration-verifier.md",
+        lambda text: text.count(VERIFIER_NO_QUOTE) == 1 and "(the quote is missing, misquoted," not in text,
+        "tighter loops P2 REM-FIX 2: a HIGH that lost its quote between review and verifier was dropped as hallucinated",
+    ),
+    A(
+        "debug-workflow: DEBUG LOW findings are listed under the DEBUG-RESET summary and in the completion message",
+        ROUTER_REFS / "debug-workflow.md",
+        lambda text: pinned_line(text, DEBUG_WORKFLOW_LOW),
+        "tighter loops P2 REM-FIX 2: DEBUG LOW findings were sent to a DEBUG report that does not exist",
+    ),
+    A(
+        "no surface sends DEBUG LOW findings to a nonexistent DEBUG report",
+        ROUTER_REFS / "build-workflow.md",
+        lambda text: "DEBUG report" not in text
+        and all(
+            "DEBUG report" not in read(path)
+            for path in (
+                ROUTER_REFS / "remediation-and-research.md",
+                AGENTS / "code-reviewer.md",
+                ROOT / "docs" / "adr" / "0003-blocking-severity-and-deferred-wave.md",
+                ROOT / "CHANGELOG.md",
+                SKILLS / "cc10x-router" / "SKILL.md",
+            )
+        ),
+        "tighter loops P2 REM-FIX 2: the DEBUG report does not exist; the LOW list lives under the DEBUG-RESET summary",
+    ),
+    A(
         "qa-workflow: a reviewer CHANGES_REQUESTED (now CRITICAL or HIGH) stops the harness review, as ADR 0003 records",
         ROUTER_REFS / "qa-workflow.md",
         lambda text: QA_REVIEW_STOP in " ".join(text.split())
         and "stops the route at this phase" in " ".join(text.split())
+        and pinned_line(text, QA_NON_BLOCKING_CLASS)
+        and "Minors from" not in text
+        and "non-blocking Minor" not in text
         and pinned_line(read(AGENTS / "code-reviewer.md"), REVIEWER_RULE)
         and pinned_line(read(ROOT / "docs" / "adr" / "0003-blocking-severity-and-deferred-wave.md"), ADR_QA_REVIEW_CONSEQUENCE),
         "tighter loops P2 REM-FIX: HIGH -> CHANGES_REQUESTED also stops qa-review; the effect is accepted and recorded",
@@ -4548,7 +4624,10 @@ ASSERTIONS = [
         "CHANGELOG: the severity-gate bullet names the DEBUG split, the QA and REVIEW effect, and the routing fixes",
         ROOT / "CHANGELOG.md",
         contains_all(
-            "In DEBUG, MEDIUM auto-creates a REM-FIX and LOW is listed in the DEBUG report",
+            "In DEBUG, MEDIUM auto-creates a REM-FIX and LOW is listed under the `[DEBUG-RESET]` summary and in the"
+            " completion message",
+            "or a non-terminal artifact whose `pending_gate` is `scope_decision`",
+            "never from the envelope `b` or `REMEDIATION_NEEDED`",
             "also stops the QA harness review",
             "### Verified",
             "### Folded Review",

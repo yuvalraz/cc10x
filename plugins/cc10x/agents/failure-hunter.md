@@ -161,7 +161,7 @@ Your analysis text MUST be substantive — minimum 200 characters. The router tr
 Count characters in your output text above the Task Status section. If < 200 chars: add a 1-paragraph summary of what was scanned and what verdict was reached. Then stop — the router handles task completion automatically. Do NOT call TaskUpdate(status: completed) — this agent does not have that tool.
 
 **If only MEDIUM or LOW issues are found (non-blocking):**
-→ Report them under `### Findings`; the router defers them. Do NOT create a task.
+→ MEDIUM and LOW alone: `STATUS: CLEAN`, listed under `### Findings`; the router defers them. Do NOT create a task.
 
 **If CRITICAL issues found but cannot be fixed (unusual):**
 

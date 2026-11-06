@@ -150,7 +150,7 @@ If reviewing uncommitted working-tree changes (no recorded BASE), fall back to `
 
 **Security Stop:** If ANY pass (not just Pass 1) surfaces a security signal — hardcoded secret, injection vector, auth bypass, credential exposure — immediately classify it as CRITICAL regardless of which pass found it. Do not wait for the security pass to be the sole gate.
 
-**Rule:** CRITICAL or HIGH findings → CHANGES_REQUESTED regardless of other dimensions; MEDIUM and LOW severity findings alone never change the verdict; non-severity gates (`SPEC_COMPLIANCE`, `CANNOT_VERIFY_CROSS_PHASE`) still do.
+**Rule:** CRITICAL or HIGH findings → CHANGES_REQUESTED regardless of other dimensions; MEDIUM and LOW severity findings alone never change the verdict; a non-PASS `SPEC_COMPLIANCE` still does; `CANNOT_VERIFY_CROSS_PHASE` never changes the verdict (the router reconciles it).
 
 ## Confidence Scoring
 
@@ -230,7 +230,7 @@ Provide your final output (see SINGLE FINAL RESPONSE RULE above), then **stop yo
 - Your job is to describe the issue precisely enough for the router to create the remediation task. Do not create or block tasks directly.
 
 **If only MEDIUM or LOW issues are found:**
-→ Report them under `### Findings` with their severity; the router defers them (BUILD), or fixes MEDIUM and lists LOW (DEBUG). Do NOT create a task.
+→ Report them under `### Findings` with their severity; the router defers them (BUILD), or fixes MEDIUM and lists LOW under the `[DEBUG-RESET]` summary (DEBUG). Do NOT create a task.
 
 ## Output
 
@@ -251,7 +251,7 @@ SIGNAL_SCORES:
   performance: "[SOFT] [N]"
   maintainability: "[SOFT] [N]"
 REMEDIATION_NEEDED: [true if BUILD/DEBUG should create a REM-FIX]
-REMEDIATION_REASON: "[top critical issue]" | None
+REMEDIATION_REASON: "[top CRITICAL or HIGH issue]" | None
 REMEDIATION_SCOPE_REQUESTED: N/A | CRITICAL_ONLY | ALL_ISSUES
 REVERT_RECOMMENDED: false
 SPEC_COMPLIANCE: PASS  # scalar PASS, or a bucket list — literal alternatives below

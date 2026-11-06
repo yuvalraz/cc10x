@@ -170,7 +170,7 @@ Terminal test: a workflow is terminal when its events log or `status_history` ho
 
 Scope-decision resume:
 
-- A legacy `[SCOPE-DECISION-PENDING: wf:{workflow_uuid} reason:{...}]` marker in `activeContext.md ## Decisions` (written by a pre-12.11 router) is handled on resume before normal routing. When its `wf:` is terminal or out of scope, the router only removes the marker. Otherwise, on the same resume, it removes the marker from `## Decisions`, clears a `pending_gate` of `scope_decision` on that workflow, records `scope_decision_resolved` in `status_history`, creates the REM-FIX with `scope:ALL_ISSUES`, and stops. The router asks no scope question (`references/remediation-and-research.md` `### Scope resolution`).
+- A legacy `[SCOPE-DECISION-PENDING: wf:{workflow_uuid} reason:{...}]` marker in `activeContext.md ## Decisions` (written by a pre-12.11 router), or a non-terminal artifact whose `pending_gate` is `scope_decision` with no marker, is handled on resume before normal routing. When the marker's `wf:` is terminal or out of scope, the router only removes the marker. Otherwise, on the same resume, it removes the marker from `## Decisions` when there is one, clears the `pending_gate` of `scope_decision` on that workflow, records `scope_decision_resolved` in `status_history`, creates the REM-FIX with `scope:ALL_ISSUES` for that review's blocking set, appends that review's MEDIUM and LOW findings to `deferred_findings`, and stops. The router asks no scope question (`references/remediation-and-research.md` `### Scope resolution`).
 
 Safety rules:
 
@@ -634,6 +634,7 @@ Claude Code may run a dispatched agent in the background and deliver its result 
    - phase status
    - phase cursor changes only after `phase_exit_gate` passes
    - structured agent results
+   - every CRITICAL and HIGH entry from `code-reviewer` and `failure-hunter`, in `results.reviewer` and `results.hunter`, each with its finding text and its file:line quote as the agent wrote them (never a count alone)
    - scenario evidence grouped by agent
    - plan/design/research file paths
    - capabilities and chosen research backend path when applicable
@@ -663,11 +664,12 @@ Claude Code may run a dispatched agent in the background and deliver its result 
 
 Before invoking `integration-verifier` in BUILD:
 
-- Read `results.reviewer` and `results.hunter` from the workflow artifact.
+- Read `results.reviewer` and `results.hunter` from the workflow artifact, and render the Critical Issues and High Issues blocks below from the entries persisted there (after-agent step 6), one per line: the finding text and its file:line quote.
 - Build `## Previous Agent Findings` exactly in the format verifier expects:
 
   ```
   ## Previous Agent Findings
+  A finding listed here with no file:line quote is validated `degraded` (kept in the blocking set), never `false`.
 
   ### Code Reviewer
   **Verdict:** {Approve|Changes Requested}
@@ -738,6 +740,7 @@ For PLAN:
 For DEBUG:
 
 - Preserve the latest `[DEBUG-RESET: wf:{workflow_uuid}]` section in `## Recent Changes` and summarize the final result beneath it.
+- List each LOW finding of the workflow (source, finding, file:line) under that `[DEBUG-RESET]` summary in `activeContext.md ## Recent Changes` and in the completion message: in DEBUG a LOW gets no REM-FIX (`references/remediation-and-research.md` rule 1b), and this list is where it goes.
 
 ## 14. Hard Rules
 

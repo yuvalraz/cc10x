@@ -49,6 +49,10 @@ TaskCreate({
 TaskUpdate({ taskId: memory_task_id, addBlockedBy: [verifier_task_id] })
 ```
 
+### DEBUG LOW findings
+
+LOW findings get no REM-FIX in DEBUG (`remediation-and-research.md` rule 1b). At memory finalization the router lists each one (source, finding, file:line) under the `[DEBUG-RESET]` summary in `activeContext.md ## Recent Changes` and in the completion message (`SKILL.md` §13 For DEBUG).
+
 ### DEBUG independence-test gate (opt-in fan-out)
 
 Default to a SINGLE investigator. Fan-out is an opt-in optimization, gated on provable independence — when in doubt, serialize.
