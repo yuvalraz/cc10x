@@ -139,7 +139,8 @@ PLANNING_CHECK_11 = (
 )
 HANDOFF_TABLES_LINE = (
     "- include the phase's `#### Input space`, `#### Failure modes` and `#### Touched surfaces` tables verbatim when the plan"
-    " phase carries them (a plan saved before 12.11 may not; the handoff then omits them and the build proceeds)"
+    " phase carries them (a plan saved before phase tables existed may not; the handoff then omits them and the build"
+    " proceeds)"
 )
 FINDING_BUCKET_KEYS = [
     "repo_mismatches",
@@ -203,14 +204,15 @@ SCOPE_NO_DOUBLE_ROUTE = (
 SCOPE_ONE_WAVE = (
     "- Every BUILD REM-FIX takes the whole blocking set in one wave with `scope:ALL_ISSUES`, and the router asks no scope"
     " question. BUILD reviewers request `REMEDIATION_SCOPE_REQUESTED: N/A`. The router never creates `scope:CRITICAL_ONLY`;"
-    " the value stays in the enum only so pre-12.11 tasks still parse."
+    " the value stays in the enum only so older tasks still parse."
 )
 SCOPE_ENVELOPE = (
     "- The router computes the blocking set from finding severities, never from the envelope `b` or `REMEDIATION_NEEDED`"
     " (`b` counts CRITICAL only)."
 )
 SCOPE_LEGACY = (
-    "- Legacy scope decision: a `[SCOPE-DECISION-PENDING: ...]` marker that a pre-12.11 router left in `activeContext.md"
+    "- Legacy scope decision: a `[SCOPE-DECISION-PENDING: ...]` marker that a router that still asked the scope question left in"
+    " `activeContext.md"
     " ## Decisions`, or a non-terminal artifact whose `pending_gate` is `scope_decision` with no marker, is resolved on"
     " resume as `SKILL.md` §4 `Scope-decision resume:` says (marker removed and, unless its `wf:` is terminal or out of"
     " scope, one REM-FIX created with `scope:ALL_ISSUES` for that review's blocking set, its MEDIUM and LOW appended to"
@@ -219,13 +221,13 @@ SCOPE_LEGACY = (
 )
 ROUTER_LEGACY_RESUME = (
     "- A legacy `[SCOPE-DECISION-PENDING: wf:{workflow_uuid} reason:{...}]` marker in `activeContext.md ## Decisions` (written"
-    " by a pre-12.11 router), or a non-terminal artifact whose `pending_gate` is `scope_decision` with no marker, is"
+    " by a router that still asked the scope question), or a non-terminal artifact whose `pending_gate` is `scope_decision` with no marker, is"
     " handled on resume before normal routing. When the marker's `wf:` is terminal or out of scope, the router only removes"
     " the marker. Otherwise, on the same resume, it removes the marker from `## Decisions` when there is one, clears the"
     " `pending_gate` of `scope_decision` on that workflow, and records `scope_decision_resolved` in `status_history`. When"
     " the artifact holds that review's persisted finding entries, it creates the REM-FIX with `scope:ALL_ISSUES` for that"
     " review's blocking set, appends that review's MEDIUM and LOW findings to `deferred_findings`, and stops. When it holds"
-    " none (a pre-12.11 artifact stores counts only), it creates no REM-FIX and re-dispatches that phase's `code-reviewer`"
+    " none (an artifact written by an older router stores counts only), it creates no REM-FIX and re-dispatches that phase's `code-reviewer`"
     " and `failure-hunter`; their results go through the normal rules. The router asks no scope question"
     " (`references/remediation-and-research.md` `### Scope resolution`)."
 )
@@ -262,6 +264,42 @@ DEBUG_WORKFLOW_LOW = (
     " appends each LOW to `deferred_findings` with `severity: low`; at memory finalization it lists each one (source,"
     " finding, file:line) under the `[DEBUG-RESET]` summary in `activeContext.md ## Recent Changes` and in the completion"
     " message (`SKILL.md` §13 For DEBUG), never at BUILD-DONE."
+)
+# Scope cut: this round ships P1 and P2 only; the MEDIUM fix wave and the mandatory final review are a later round.
+ROUTER_BUILD_TRIVIAL_DEFERRED = (
+    "- When `build_scope=trivial`, list each `deferred_findings` entry (source, severity, finding) in the completion"
+    " message: a trivial build skips BUILD-DONE finishing, so its `### Folded Review` MEDIUM and LOW entries are never"
+    " triaged at step 1a, and this list is where they go."
+)
+BUILD_FINAL_REVIEW_FIX = (
+    "4. If the reviewer returns CRITICAL or HIGH findings, run one fix wave — a single remediation `component-builder`"
+    " addressing all of them together, NOT one fixer per finding — then re-verify with one `integration-verifier` against"
+    " `results.baseline`. MEDIUM and LOW findings go to `deferred_findings`. If it returns no CRITICAL or HIGH findings,"
+    " record clean and proceed."
+)
+BUILD_FINAL_REVIEW_DEFER = (
+    "This reuses the existing `code-reviewer` and remediation machinery; it adds no new agent type. MEDIUM and LOW"
+    " findings flow to `deferred_findings` and are surfaced at finishing."
+)
+BUILD_FINISH_STEP_1A = (
+    "1a. **Surface deferred MEDIUM and LOW findings before the menu.** Read `deferred_findings` from the workflow artifact."
+    " If non-empty, present the accumulated list (source, phase, severity, finding) for explicit triage BEFORE offering the"
+    " finishing menu, so nothing rolls off silently. Let the user fix now, file as follow-up, or knowingly accept; record"
+    " the disposition in the artifact. An empty array is fine — just note \"no deferred findings\" and continue. This is"
+    " surfacing-and-triage only; the router takes no automatic action on these findings."
+)
+ADR_0003 = ROOT / "docs" / "adr" / "0003-blocking-severity.md"
+ADR_SUMMARY = (
+    "Only CRITICAL and HIGH findings, plus the non-severity gates that already\n"
+    "blocked, stop a BUILD phase. One REM-FIX takes the whole blocking set with\n"
+    "`scope:ALL_ISSUES`, and the router asks no scope question. MEDIUM and LOW\n"
+    "findings in BUILD go to `deferred_findings` and are surfaced at BUILD-DONE\n"
+    "triage step 1a, where the user decides."
+)
+ADR_DEFER_TRADEOFF = (
+    "- **Defer MEDIUM and LOW without a wave.** Accepted for now: a MEDIUM is fixed\n"
+    "  only if the user picks \"fix now\" at BUILD-DONE triage. A deferred fix wave is\n"
+    "  a later round."
 )
 QA_NON_BLOCKING_CLASS = (
     "  QA's non-blocking class is the MEDIUM and LOW findings from `qa-review` or `qa-hunt`; those findings, and"
@@ -4434,7 +4472,7 @@ ASSERTIONS = [
         SKILLS / "cc10x-router" / "references" / "build-workflow.md",
         lambda text: (m := re.search(r"\n3\. Run `plan_trust_gate` before BUILD:.*?\n4\. ", text, re.S)) is not None
         and re.search(r"(?i)Input space|Failure modes|Touched surfaces|phase tables?|D14", m.group(0)) is None,
-        "tighter loops P1 (D14): plans saved before 12.11 still build",
+        "tighter loops P1 (D14): a plan saved before phase tables existed still builds",
     ),
     A(
         "prompt-invariants: PINV-009 names the phase tables",
@@ -4479,7 +4517,7 @@ ASSERTIONS = [
         and pinned_line(text, ROUTER_DEBUG_LOW)
         and "`critical only` -> create the pending REM-FIX" not in text
         and "Fix critical only (Recommended)" not in text,
-        "tighter loops P2 (D2): no scope question; a pre-12.11 marker still resumes",
+        "tighter loops P2 (D2): no scope question; a marker from a router that still asked it still resumes",
     ),
     A(
         "router: step 3 extracts HIGH, the verifier handoff passes HIGH for both agents, and validation precedes the blocking set",
@@ -4507,6 +4545,40 @@ ASSERTIONS = [
         and "### Deferred Minor findings roll-up" not in text
         and "raises a Minor finding that does NOT block" not in text,
         "tighter loops P2 (D4): deferred entries carry the agent's severity",
+    ),
+    A(
+        "build-workflow: the final review fixes only CRITICAL and HIGH, defers MEDIUM and LOW, stays skippable, and step 1a shows severity",
+        ROUTER_REFS / "build-workflow.md",
+        lambda text: pinned_line(text, BUILD_FINAL_REVIEW_FIX)
+        and pinned_line(text, BUILD_FINAL_REVIEW_DEFER)
+        and pinned_line(text, BUILD_FINISH_STEP_1A)
+        and "It is gated and skippable; never auto-runs as a contract-enforced phase." in text
+        and "Minor findings" not in text
+        and "If the reviewer returns findings, run ONE consolidated fix wave" not in text,
+        "scope cut: the severity gate ships without a MEDIUM fix wave; the final review and triage use its vocabulary",
+    ),
+    A(
+        "router: §13 For BUILD lists a trivial build's deferred findings in the completion message",
+        SKILLS / "cc10x-router" / "SKILL.md",
+        lambda text: (m := re.search(r"\nFor BUILD:\n.*?\nFor DEBUG:\n", text, re.S)) is not None
+        and pinned_line(m.group(0), ROUTER_BUILD_TRIVIAL_DEFERRED)
+        and pinned_line(text, ROUTER_BUILD_TRIVIAL_DEFERRED),
+        "scope cut: a trivial build skips finishing, so its Folded Review MEDIUM and LOW were deferred and never surfaced",
+    ),
+    A(
+        "no shipped surface names the unreleased version, the dropped MEDIUM fix wave or the old ADR path",
+        ROOT / "CHANGELOG.md",
+        lambda text: all(
+            re.search(r"12\.11|deferred\swave|0003-blocking-severity-an[d]", read(path)) is None
+            for path in (
+                ROOT / "CHANGELOG.md",
+                ADR_0003,
+                SKILLS / "cc10x-router" / "SKILL.md",
+                ROUTER_REFS / "build-workflow.md",
+                ROUTER_REFS / "remediation-and-research.md",
+            )
+        ),
+        "scope cut: P3, P5, P6 and P8 (the version bump) move to a later round, so the branch describes only P1 and P2",
     ),
     A(
         "policy: deferred_findings severities are medium, low and minor; the reviewer override names high issues",
@@ -4575,11 +4647,18 @@ ASSERTIONS = [
         "tighter loops P2 (D2): the invariant registry must match the rule",
     ),
     A(
-        "ADR 0003: blocking severity and the deferred wave",
-        ROOT / "docs" / "adr" / "0003-blocking-severity-and-deferred-wave.md",
+        "ADR 0003: blocking severity",
+        ADR_0003,
         lambda text: contains_all(
             "## Context", "## Decision", "## Rejected alternatives", "## Consequences", "the whole blocking set"
         )(text)
+        and text.startswith("# Blocking Severity\n")
+        and pinned_line(text, ADR_SUMMARY)
+        and pinned_line(text, ADR_DEFER_TRADEOFF)
+        and "D10" not in text
+        and "mandatory final review" not in text
+        and len(list((ROOT / "docs" / "adr").glob("0003-*"))) == 1
+        and not list((ROOT / "docs" / "adr").glob("0004-*"))
         and all(pinned_line(text, line) for line in (ADR_DEBUG_DECISION, ADR_QA_REVIEW_CONSEQUENCE, ADR_ROUTING_CONSEQUENCE))
         and "DEBUG keeps auto-creating a REM-FIX for non-blocking items" not in text
         and "re-runs that phase's reviewer and hunter when the artifact stores counts only" in " ".join(text.split())
@@ -4613,7 +4692,7 @@ ASSERTIONS = [
             for path in (
                 ROUTER_REFS / "remediation-and-research.md",
                 AGENTS / "code-reviewer.md",
-                ROOT / "docs" / "adr" / "0003-blocking-severity-and-deferred-wave.md",
+                ADR_0003,
                 ROOT / "CHANGELOG.md",
                 SKILLS / "cc10x-router" / "SKILL.md",
             )
@@ -4629,7 +4708,7 @@ ASSERTIONS = [
         and "Minors from" not in text
         and "non-blocking Minor" not in text
         and pinned_line(read(AGENTS / "code-reviewer.md"), REVIEWER_RULE)
-        and pinned_line(read(ROOT / "docs" / "adr" / "0003-blocking-severity-and-deferred-wave.md"), ADR_QA_REVIEW_CONSEQUENCE),
+        and pinned_line(read(ADR_0003), ADR_QA_REVIEW_CONSEQUENCE),
         "tighter loops P2 REM-FIX: HIGH -> CHANGES_REQUESTED also stops qa-review; the effect is accepted and recorded",
     ),
     A(
