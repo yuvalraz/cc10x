@@ -170,7 +170,7 @@ Terminal test: a workflow is terminal when its events log or `status_history` ho
 
 Scope-decision resume:
 
-- A legacy `[SCOPE-DECISION-PENDING: wf:{workflow_uuid} reason:{...}]` marker in `activeContext.md ## Decisions` (written by a pre-12.11 router), or a non-terminal artifact whose `pending_gate` is `scope_decision` with no marker, is handled on resume before normal routing. When the marker's `wf:` is terminal or out of scope, the router only removes the marker. Otherwise, on the same resume, it removes the marker from `## Decisions` when there is one, clears the `pending_gate` of `scope_decision` on that workflow, records `scope_decision_resolved` in `status_history`, creates the REM-FIX with `scope:ALL_ISSUES` for that review's blocking set, appends that review's MEDIUM and LOW findings to `deferred_findings`, and stops. The router asks no scope question (`references/remediation-and-research.md` `### Scope resolution`).
+- A legacy `[SCOPE-DECISION-PENDING: wf:{workflow_uuid} reason:{...}]` marker in `activeContext.md ## Decisions` (written by a pre-12.11 router), or a non-terminal artifact whose `pending_gate` is `scope_decision` with no marker, is handled on resume before normal routing. When the marker's `wf:` is terminal or out of scope, the router only removes the marker. Otherwise, on the same resume, it removes the marker from `## Decisions` when there is one, clears the `pending_gate` of `scope_decision` on that workflow, and records `scope_decision_resolved` in `status_history`. When the artifact holds that review's persisted finding entries, it creates the REM-FIX with `scope:ALL_ISSUES` for that review's blocking set, appends that review's MEDIUM and LOW findings to `deferred_findings`, and stops. When it holds none (a pre-12.11 artifact stores counts only), it creates no REM-FIX and re-dispatches that phase's `code-reviewer` and `failure-hunter`; their results go through the normal rules. The router asks no scope question (`references/remediation-and-research.md` `### Scope resolution`).
 
 Safety rules:
 
@@ -740,7 +740,7 @@ For PLAN:
 For DEBUG:
 
 - Preserve the latest `[DEBUG-RESET: wf:{workflow_uuid}]` section in `## Recent Changes` and summarize the final result beneath it.
-- List each LOW finding of the workflow (source, finding, file:line) under that `[DEBUG-RESET]` summary in `activeContext.md ## Recent Changes` and in the completion message: in DEBUG a LOW gets no REM-FIX (`references/remediation-and-research.md` rule 1b), and this list is where it goes.
+- List each `severity: low` entry of the workflow's `deferred_findings` (source, finding, file:line) under that `[DEBUG-RESET]` summary in `activeContext.md ## Recent Changes` and in the completion message: in DEBUG a LOW gets no REM-FIX (`references/remediation-and-research.md` rule 1b), and this list is where it goes.
 
 ## 14. Hard Rules
 

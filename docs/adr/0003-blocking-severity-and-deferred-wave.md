@@ -38,13 +38,14 @@ for a single LOW nit.
   `scope:ALL_ISSUES`. `CRITICAL_ONLY` stays in the `scope:` enum and in
   `REMEDIATION_SCOPE_REQUESTED` only so pre-12.11 tasks parse; a legacy
   `[SCOPE-DECISION-PENDING]` marker, or a leftover `pending_gate` of
-  `scope_decision`, resumes as an `ALL_ISSUES` REM-FIX.
+  `scope_decision`, resumes as an `ALL_ISSUES` REM-FIX, or re-runs that
+  phase's reviewer and hunter when the artifact stores counts only.
 - **Envelope unchanged (D3).** The line-1 envelope `b`/`cr` keep counting
   CRITICAL only; the router computes the blocking set from severities, never
   from `b` or `REMEDIATION_NEEDED`.
 - **Deferred entries (D4).** `deferred_findings` entries are
   `{source, phase_id, finding, severity}` with `severity` one of `medium`, `low`
-  or `minor`. BUILD writes `medium` or `low`; `minor` stays valid for QA and
+  or `minor`. BUILD writes `medium` or `low`; DEBUG writes `low`; `minor` stays valid for QA and
   older artifacts.
 - **DEBUG (D4).** In DEBUG, MEDIUM auto-creates a REM-FIX and LOW is listed under the `[DEBUG-RESET]` summary and in the completion message with no REM-FIX, so a single LOW nit no longer reopens a fix cycle. REVIEW keeps its ask.
 - **BUILD-DONE order (D10).** A standard build runs one deferred wave over the
