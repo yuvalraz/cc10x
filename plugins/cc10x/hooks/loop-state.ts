@@ -105,19 +105,24 @@ function cursorOf(artifact: Artifact): string {
 }
 
 export function isFinished(artifact: Artifact, events: LoopEvent[]): boolean {
-  if (artifact.phase_cursor === 'memory-finalize' && obj(artifact.phase_status)['memory-finalize'] === 'completed') return true
+  return terminalOf(artifact, events) !== null
+}
+
+// The terminal marker that finishes the workflow, or null while it runs.
+function terminalOf(artifact: Artifact, events: LoopEvent[]): string | null {
+  if (artifact.phase_cursor === 'memory-finalize' && obj(artifact.phase_status)['memory-finalize'] === 'completed') return 'memory_finalized'
   const history = Array.isArray(artifact.status_history) ? artifact.status_history : []
   const last = obj(history[history.length - 1])
-  const historyTerminal = typeof last.event === 'string' && TERMINAL.has(last.event)
+  const historyTerminal = typeof last.event === 'string' && TERMINAL.has(last.event) ? last.event : null
   const newest = events[events.length - 1]
   if (newest === undefined) return historyTerminal
-  const logTerminal = TERMINAL.has(newest.event)
+  const logTerminal = TERMINAL.has(newest.event) ? newest.event : null
   const historyTs = str(last.ts)
   // Router-written ISO stamps compare as strings; the later one decides when both exist and differ.
   if (historyTs !== null && newest.ts !== '' && historyTs !== newest.ts) {
     return historyTs > newest.ts ? historyTerminal : logTerminal
   }
-  return historyTerminal || logTerminal
+  return logTerminal ?? historyTerminal
 }
 
 function boundaryOf(events: LoopEvent[], cursor: string): number {
@@ -216,7 +221,8 @@ export function deriveSteps(artifact: Artifact, events: LoopEvent[], spawns: Spa
 // The ledger: one row per plan phase (or one route row), each holding its results and REM-FIX markers in event
 // order, plus the cursor row's live spawns. A result binds the latest earlier unbound spawn of its agent, phase and workflow.
 export function deriveLedger(artifact: Artifact, events: LoopEvent[], spawns: Spawn[]): LedgerPhase[] {
-  const finished = isFinished(artifact, events)
+  const terminal = terminalOf(artifact, events)
+  const finished = terminal !== null
   const rows: LedgerPhase[] = []
   for (const p of phasesOf(artifact)) {
     // An entry with no id is skipped and a repeated id is one row, so row ids stay unique.
@@ -224,7 +230,7 @@ export function deriveLedger(artifact: Artifact, events: LoopEvent[], spawns: Sp
     rows.push({ id: p.id, status: p.status === 'in_progress' ? 'running' : p.status, rounds: 0, isCursor: false, steps: [] })
   }
   if (rows.length === 0) {
-    rows.push({ id: str(artifact.workflow_type) || 'workflow', status: finished ? 'completed' : 'running', rounds: 0, isCursor: false, steps: [] })
+    rows.push({ id: str(artifact.workflow_type) || 'workflow', status: terminal === 'workflow_failed' ? 'failed' : finished ? 'completed' : 'running', rounds: 0, isCursor: false, steps: [] })
   }
   const cursor = cursorOf(artifact)
   const home = rows.find(r => r.id === cursor) ?? rows[0]
@@ -254,6 +260,7 @@ export function deriveLedger(artifact: Artifact, events: LoopEvent[], spawns: Sp
       decision: e.decision,
       at: e.ts,
       startedAt: null,
+      index: i,
       ...(spawn?.agentId !== undefined ? { agentId: spawn.agentId } : {}),
     })
   })

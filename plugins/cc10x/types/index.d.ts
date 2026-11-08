@@ -32,7 +32,9 @@ export type LedgerStep = {
   at: string | null // event ts; null for running
   startedAt: number | null // spawn startedAt for running; null otherwise
   agentId?: string // bound spawn's agentId (run) or the spawn's own (running)
+  index?: number // the result's event index (run only): its Button key, unique where two runs share an agentId
 }
+// `status`: a phase_status value (`in_progress` reads `running`), or the route row's `running`, `completed` or `failed`.
 export type LedgerPhase = { id: string; status: string; rounds: number; isCursor: boolean; steps: LedgerStep[] }
 export type LoopState = {
   wf: string
@@ -56,10 +58,12 @@ export type LoopView = {
   last: { wf: string; finishedAt: string; path: string; type: string; ledger: LedgerPhase[] } | null
   error: string | null
 }
+export type Expanded = Record<string, Record<string, boolean>>
 
 declare module 'claude-code' {
   interface PluginState {
     // `opened`: the live workflow ids the pane already opened for unasked (OD-1 B), newest last.
-    cc10x: { loop: LoopView; spawns: Spawn[]; opened: string[] }
+    // `expanded`: per workflow (`wf || path`), each phase row the person opened (true) or closed (false).
+    cc10x: { loop: LoopView; spawns: Spawn[]; opened: string[]; expanded: Expanded }
   }
 }

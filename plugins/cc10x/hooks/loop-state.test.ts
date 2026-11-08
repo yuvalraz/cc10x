@@ -716,8 +716,8 @@ test('ledger 1. FINISHED_BUILD: seven rows P1-P7 in plan order, all completed, f
   expect(ledger.map(p => p.rounds)).toEqual([3, 0, 3, 4, 4, 3, 0])
   expect(ledger.map(p => p.isCursor)).toEqual([false, false, false, false, false, false, true])
   expect(ledger[6].steps).toEqual([
-    { kind: 'run', agent: 'router', taskPhase: 'build-finish', decision: 'COMMITTED', at: '2026-10-19T07:09:40Z', startedAt: null },
-    { kind: 'run', agent: 'router', taskPhase: 'build-finish', decision: 'DONE', at: '2026-10-19T07:15:36Z', startedAt: null },
+    { kind: 'run', agent: 'router', taskPhase: 'build-finish', decision: 'COMMITTED', at: '2026-10-19T07:09:40Z', startedAt: null, index: 101 },
+    { kind: 'run', agent: 'router', taskPhase: 'build-finish', decision: 'DONE', at: '2026-10-19T07:15:36Z', startedAt: null, index: 102 },
   ])
 })
 
@@ -747,7 +747,7 @@ test('ledger 3. parallel reviewer and hunter spawns at cursor P3 are two running
   ])
 
   expect(ledger[2].steps).toEqual([
-    { kind: 'run', agent: 'component-builder', taskPhase: 'build-implement', decision: 'PASS', at: '2026-10-18T12:51:24Z', startedAt: null },
+    { kind: 'run', agent: 'component-builder', taskPhase: 'build-implement', decision: 'PASS', at: '2026-10-18T12:51:24Z', startedAt: null, index: 24 },
     { kind: 'running', agent: 'code-reviewer', taskPhase: '', decision: null, at: null, startedAt: NOW, agentId: 'a-rev' },
     { kind: 'running', agent: 'failure-hunter', taskPhase: '', decision: null, at: null, startedAt: NOW + 1000, agentId: 'a-hunt' },
   ])
@@ -841,4 +841,25 @@ test('ledger 11. a normalized_phases entry with no id is skipped and entries sha
   })
   expect(ledger.map(p => p.id)).toEqual(['P1', 'P2'])
   expect(ledger[0].steps).toHaveLength(5)
+})
+
+test('ledger 12. a route row whose deciding terminal marker is workflow_failed reads failed, from the log or status_history; memory_finalized reads completed', () => {
+  const { artifact, events } = load(PLAN_AT_GAP1)
+  const ended = (event: string) => [...events, { ...events[0], ts: '2026-10-21T00:00:00Z', event }]
+  expect(deriveLedger(artifact, ended('workflow_failed'), [])[0].status).toBe('failed')
+  expect(deriveLedger(artifact, ended('memory_finalized'), [])[0].status).toBe('completed')
+
+  const history = (event: string) => load(PLAN_AT_GAP1, a => (a.status_history = [{ event, ts: '2026-10-22T00:00:00Z' }])).artifact
+  expect(deriveLedger(history('workflow_failed'), events, [])[0].status).toBe('failed')
+  // A later log line decides over an earlier history entry.
+  expect(deriveLedger(history('workflow_failed'), [...events, { ...events[0], ts: '2026-10-23T00:00:00Z', event: 'workflow_completed' }], [])[0].status).toBe('completed')
+})
+
+test('ledger 13. a run step carries its event index, so two results of one agentId stay apart', () => {
+  const { events } = load(BUILD_REMEDIATION)
+  const ledger = ledgerOf(BUILD_REMEDIATION)
+  const runs = ledger[0].steps.filter(s => s.kind === 'run')
+  expect(runs.map(s => s.index)).toEqual(runs.map(s => events.findIndex(e => e.ts === s.at && e.event === 'result_persisted')))
+  expect(new Set(runs.map(s => s.index)).size).toBe(4)
+  expect(ledger[0].steps.filter(s => s.kind === 'remfix').every(s => s.index === undefined)).toBe(true)
 })

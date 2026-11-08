@@ -80,17 +80,18 @@ SessionStart says so in one line naming the unreadable artifact. Without
 
 `hooks.json` also names a hooks module, `"modules": ["./register.tsx"]`, beside the
 `hooks` object. It is a Claude Code mod that shows a running cc10x workflow: which
-phase is current, which agent is running, what is pending, and the whole step chain.
-It is a read-only viewer: it never writes to `.cc10x/`, never changes a workflow and
-never blocks a tool call. The settings hooks in the table above run exactly as before.
+phase is current, which agent is running, what is pending, and a ledger of every phase
+with the steps run in it. It is a read-only viewer: it never writes to `.cc10x/`, never
+changes a workflow and never blocks a tool call; opening a transcript only moves the view. The settings hooks in the table above run exactly as before.
 
 **What it reads.** The newest live workflow artifact `.cc10x/workflows/wf-*.json` and its
 events log `wf-*.events.jsonl`. Like resume context it takes the newest live artifact
 first, but it reads at most the 20 newest and skips an older artifact that has no events log. It re-reads
 at session start, after an Edit, Write or Bash call that names `.cc10x/workflows/`,
 when a cc10x workflow agent is spawned, and when a turn completes. Its own plugin state
-(`cc10x.loop`, `cc10x.spawns`, `cc10x.opened`) holds the last view, the spawns it has
-seen, and the workflow ids it already opened the pane for.
+(`cc10x.loop`, `cc10x.spawns`, `cc10x.opened`, `cc10x.expanded`) holds the last view, the
+spawns it has seen, the workflow ids it already opened the pane for, and which phase rows
+you opened or closed.
 
 **Where it looks.** The router writes `.cc10x/` beside the shell's current directory, which
 a shell `cd` moves while the project root stays put. So the mod looks in `.cc10x/workflows`
@@ -114,11 +115,19 @@ as a dim line until a directory turns up again.
   run, the next step, the remediation count against the circuit breaker, and any
   pending gate. It ends with ` · stale` when the last re-read failed and the band shows
   the previous view. Drawn in the terminal and Desktop only.
-- A dock pane: the workflow header, the raw phase cursor, one row per chain step
-  with its decision or running time (router results outside the chain marked `+`),
-  the remediation count, the gate, the last three events, and any read error or
-  warning. With no live workflow, the pane says so and names the last workflow that
-  finished.
+- A dock pane: the workflow ledger. Under the workflow header is one row per plan
+  phase (one row for the whole route when the workflow has no phases), with its status
+  and fix count. Tab to a row and press Enter to open or close it; the current phase
+  starts open, and your choice holds across refreshes. An open row lists its steps in
+  order: each result with its decision and time, each running agent with how long it
+  has run, and a dim `— REM-FIX n` marker for each fix round. Enter on a result or a
+  running agent opens its transcript in the main view, and while a transcript shows,
+  `back to conversation` at the top returns. A step with no transcript to open is dim:
+  a chain agent's step notes `no transcript`, a router step has no note. If the view
+  cannot move, a toast says why. Below the rows come the remediation count, the gate,
+  and any read error or warning. When the workflow finishes, the pane keeps its ledger
+  under a `finished` header, with no remediation line. With no workflow at all, it
+  says `no live workflow`.
 
 **Commands.** `/cc10x-loop` opens the pane. `/cc10x-loop status` re-reads and prints
 the artifact path it reads, the workflows directories it read, in order (or `no .cc10x/workflows
@@ -135,18 +144,18 @@ Desktop. It is not yet verified on a Claude Code release before 2.1.287; the set
 hooks are unaffected either way.
 
 **What `claude plugin validate plugins/cc10x` reports for it** (copied from a run on
-Claude Code 2.1.304):
+Claude Code 2.1.319):
 
 ```
   ❯ types ./types/index.d.ts declares on $: nothing (no EngineInterface member)
-  ❯ types ./types/index.d.ts declares state: cc10x.loop, cc10x.spawns, cc10x.opened
+  ❯ types ./types/index.d.ts declares state: cc10x.loop, cc10x.spawns, cc10x.opened, cc10x.expanded
   ❯ ./register.tsx hooks: session.start, tool.call, agent.spawn, turn.complete, command.run{command=cc10x-loop}, ui.render{component=AbovePrompt}, ui.render{component=Pane, requestId=cc10x-loop}
   ❯ ./register.tsx gating hook with .catch: tool.call
   ❯ ./register.tsx gating hook with .catch: agent.spawn
   ❯ ./register.tsx gating hook with .catch: command.run{command=cc10x-loop}
-  ❯ ./register.tsx calls: $.clock.now, $.command.register, $.fs.exists (via scan), $.fs.list (via scanDir), $.fs.read (via scanDir), $.session.cwd (via scan), $.session.root (via scan), $.state.get, $.state.set, $.ui.log, $.ui.open, $.ui.resolve
-  ❯ ./register.tsx state writes: cc10x.loop, cc10x.opened, cc10x.spawns
-  ❯ ./register.tsx state reads: cc10x.loop, cc10x.opened, cc10x.spawns
+  ❯ ./register.tsx calls: $.clock.now, $.command.register, $.fs.exists (via scan), $.fs.list (via scanDir), $.fs.read (via scanDir), $.session.cwd (via scan), $.session.root (via scan), $.state.get, $.state.set, $.ui.log, $.ui.open, $.ui.resolve, $.ui.toast (via view), $.ui.view (via view)
+  ❯ ./register.tsx state writes: cc10x.expanded, cc10x.loop, cc10x.opened, cc10x.spawns
+  ❯ ./register.tsx state reads: cc10x.expanded, cc10x.loop, cc10x.opened, cc10x.spawns
 ```
 
 The mod's tests (`loop-pane.test.tsx`, `loop-state.test.ts`) run with
@@ -161,7 +170,12 @@ The mod's tests (`loop-pane.test.tsx`, `loop-state.test.ts`) run with
   spawn, a turn end); there is no timer.
 - Spawns are kept in session state, so a spawn made before a session restart is not
   shown as running until its result lands in the events log.
-- A spawn for an agent outside the current chain is not shown until its result lands.
+- In the band, a spawn for an agent outside the current chain is not shown until its
+  result lands; the pane's ledger shows it running.
+- A step from an earlier session, or one whose spawn record was dropped past the
+  200 most recent, has no transcript to open (`no transcript`).
+- After a plugin reload mid-session, a stored view from the older build draws its
+  header with no phase rows until the next refresh rewrites it.
 - Whether the surface docks a pane is remembered per session, not per surface; a
   surface that never draws the band never opens the pane by itself (`/cc10x-loop`
   still opens it).

@@ -104,16 +104,30 @@ function answerFs(on: On, fixture: LoopFixture): Disk {
 }
 
 // What the plugin last wrote to its atoms: the test spies on `state.set` and lets the kit store it.
-// `openedWrites` counts writes of the `opened` atom; `failOpened` refuses each such write.
-function watchState(on: On, failOpened = false) {
-  const seen: { loop?: LoopView; spawns?: Spawn[]; openedWrites: number } = { openedWrites: 0 }
+// `openedWrites` counts writes of the `opened` atom; `failOpened` refuses each such write. `expanded` is
+// the last `expanded` write and `expandedWrites` counts them; `failExpanded` refuses each such write.
+// `preLedger` stores each loop write without the fields P1 added, as an older plugin build stored it.
+function watchState(on: On, failOpened = false, failExpanded = false, preLedger = false) {
+  const seen: { loop?: LoopView; spawns?: Spawn[]; expanded?: Record<string, Record<string, boolean>>; openedWrites: number; expandedWrites: number } = {
+    openedWrites: 0,
+    expandedWrites: 0,
+  }
   on('state.set', (_, e, next) => {
     const w = e as { plugin: string; key: string; value: unknown }
     if (w.plugin === 'cc10x' && w.key === 'opened') {
       seen.openedWrites++
       if (failOpened) return { deny: 'state store down' }
     }
-    if (w.plugin === 'cc10x' && (w.key === 'loop' || w.key === 'spawns')) Object.assign(seen, { [w.key]: w.value })
+    if (w.plugin === 'cc10x' && w.key === 'expanded') {
+      seen.expandedWrites++
+      if (failExpanded) return { deny: 'state store down' }
+    }
+    if (w.plugin === 'cc10x' && (w.key === 'loop' || w.key === 'spawns' || w.key === 'expanded')) Object.assign(seen, { [w.key]: w.value })
+    if (preLedger && w.plugin === 'cc10x' && w.key === 'loop') {
+      const { live, last } = w.value as LoopView
+      const old = { live: live && { ...live, ledger: undefined }, last: last && { ...last, type: undefined, ledger: undefined } }
+      return next({ ...e, value: { ...(w.value as LoopView), ...old } } as typeof e)
+    }
     return next(e)
   })
   return seen
@@ -122,11 +136,14 @@ function watchState(on: On, failOpened = false) {
 // The rest of the engine: every other call the hooks make, answered plainly.
 // `refuse` names engine calls that answer `{ deny }` instead.
 // 'agent.spawn!' makes the core spawn itself throw; 'ui.open' refuses every pane; 'opened' refuses every write of
-// the `opened` atom; 'agentId' makes the core spawn answer with no agentId. `opens` collects every pane id `ui.open` was asked for.
+// the `opened` atom and 'expanded' every write of the `expanded` atom; 'preLedger' stores loop writes as an older
+// build did; 'agentId' makes the core spawn answer with no
+// agentId. `opens` collects every pane id `ui.open` was asked for. The returned `views` and `toasts` collect each
+// `ui.view` argument and toast text; set `viewDeny` to resolve `ui.view` with `{ deny }`, `viewReject` to reject it.
 function engine(
   on: On,
   logs: string[] = [],
-  refuse: ('command.register' | 'agent.spawn' | 'agent.spawn!' | 'ui.open' | 'opened' | 'agentId')[] = [],
+  refuse: ('command.register' | 'agent.spawn' | 'agent.spawn!' | 'ui.open' | 'opened' | 'expanded' | 'preLedger' | 'agentId')[] = [],
   opens: string[] = [],
 ) {
   on('command.register', () => (refuse.includes('command.register') ? { deny: 'refused' } : { value: { command: 'cc10x-loop' } }))
@@ -150,7 +167,18 @@ function engine(
     const { Text } = $.ui.resolve(e)
     return <Text>engine</Text>
   })
-  return watchState(on, refuse.includes('opened'))
+  const views: { agentId?: string }[] = []
+  const toasts: string[] = []
+  const kit = Object.assign(watchState(on, refuse.includes('opened'), refuse.includes('expanded'), refuse.includes('preLedger')), { views, toasts, viewDeny: '', viewReject: '' })
+  on('ui.view', (_, e) => {
+    views.push(e)
+    return kit.viewReject ? { deny: kit.viewReject } : { value: kit.viewDeny ? { deny: kit.viewDeny } : {} }
+  })
+  on('ui.toast', (_, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  return kit
 }
 
 // `isFullscreen` is what the surface says of docking a pane (absent: it has not said).
@@ -296,14 +324,21 @@ test('ledger spawn. a core spawn result with no agentId records no agentId key',
   expect('agentId' in state.spawns![0]).toBe(false)
 })
 
-test('ledger resume. a resumed agent is not recorded again: its first spawn record already holds the agentId', async ($, on) => {
+test('ledger resume. a resumed agent is recorded again under its resume agentId, so its second result binds agent-1', async ($, on) => {
   const state = engine(on)
-  answerFs(on, BUILD_MID_PHASE)
+  const disk = answerFs(on, BUILD_MID_PHASE)
   await start($)
   await $.agent.spawn(reviewer)
+  disk.fixture = { ...BUILD_MID_PHASE, eventsText: BUILD_MID_PHASE.eventsText + APPROVE }
+  await $.turn.complete(turnDone)
   await $.agent.spawn({ ...reviewer, resume: { agentId: 'agent-1' } })
+  expect(await band($)).toMatch(/code-reviewer running/)
+  disk.fixture = { ...BUILD_MID_PHASE, eventsText: BUILD_MID_PHASE.eventsText + APPROVE + APPROVE }
+  await $.turn.complete(turnDone)
 
-  expect(state.spawns?.map(s => s.agentId)).toEqual(['agent-1'])
+  expect(state.spawns?.map(s => s.agentId)).toEqual(['agent-1', 'agent-1'])
+  const runs = state.loop?.live?.ledger[2].steps.filter(s => s.agent === 'code-reviewer')
+  expect(runs?.map(s => [s.kind, s.agentId])).toEqual([['run', 'agent-1'], ['run', 'agent-1']])
 })
 
 test('ledger last. a finished workflow\'s view.last carries type BUILD and its seven-row ledger', async ($, on) => {
@@ -600,49 +635,195 @@ const texts = async ($: Kit, surface: Surface = 'terminal') => (await pane($, su
 const SURFACES = ['terminal', 'desktop', 'vscode'] as const
 const REM_WF = 'wf-20261018T112922Z-7e99ef54'
 
-test('pane 1. BUILD_REMEDIATION: header, cursor, phases, the FIXED builder, re-review pending, remediation 1/2', async ($, on) => {
-  engine(on)
-  answerFs(on, BUILD_REMEDIATION)
-  await start($)
+// The pane as drawn under `view` (the site's view in force): its Buttons, and its Texts as `pane()` reads them.
+const ledger = async ($: Kit, view: { agentId?: string } = {}, surface: Surface = 'terminal') => {
+  const ui = await $.ui.mount({ plugin: 'cc10x', component: 'Pane', requestId: 'cc10x-loop', surface, props: { ...paneProps, view } })
+  const buttons = (await ui.findAll({ type: 'Button' })).map(b => ({ key: b.key, label: b.props.label }))
+  const found = await ui.findAll({ type: 'Text' })
+  await ui.unmount()
+  return { buttons, texts: found.map(t => ({ text: t.text, dim: t.props.dimColor === true })) }
+}
+// Presses the pane Button keyed `key` once, on a fresh mount; read the result by mounting again.
+const press = async ($: Kit, key: string, view: { agentId?: string } = {}) => {
+  const ui = await $.ui.mount({ plugin: 'cc10x', component: 'Pane', requestId: 'cc10x-loop', surface: 'terminal', props: { ...paneProps, view } })
+  await ui.press({ key })
+  await ui.unmount()
+}
+const closed = (id: string, status: string, fixes = 0) => ({ key: 'phase:' + id, label: `▸ ${id} ${status} · ${fixes} ${fixes === 1 ? 'fix' : 'fixes'}` })
+const MID_HEADER = 'cc10x · BUILD ' + WF + ' · /repo/loop-pane-fixture.md'
 
-  for (const surface of SURFACES) {
-    const lines = await texts($, surface)
-    expect(lines[0]).toBe('cc10x · BUILD ' + REM_WF + ' · /repo/loop-pane-fixture.md')
-    expect(lines).toContain('cursor: P1')
-    // P1 is in_progress at cursor P1 in this fixture: it reads ▶, never ✓.
-    expect(lines).toContain('P1 ▶ P2 · P3 · P4 · P5 · P6 · P7 ·')
-    expect(lines.some(l => /^✓ component-builder +FIXED 11:51/.test(l))).toBe(true)
-    expect(lines.some(l => /^· code-reviewer.*re-review/.test(l))).toBe(true)
-    expect(lines).toContain('remediation 1/2 · gate: none')
-  }
-})
-
-test('pane 1b. BUILD_MID_PHASE on every surface: P1 ✓ P2 ✓ P3 ▶, a spawned reviewer runs with its elapsed time', async ($, on) => {
+test('ledger pane 1. BUILD_MID_PHASE on every surface: phase Buttons, P3 open with the builder run and the spawned reviewer running, the remediation footer', async ($, on) => {
   engine(on)
   answerFs(on, BUILD_MID_PHASE)
   await start($)
   await $.agent.spawn(reviewer)
 
   for (const surface of SURFACES) {
-    const lines = await texts($, surface)
-    expect(lines).toContain('P1 ✓ P2 ✓ P3 ▶ P4 · P5 · P6 · P7 ·')
-    expect(lines.some(l => /^▶ code-reviewer running 0m00s/.test(l))).toBe(true)
-    expect(lines).toContain('remediation 0/2 · gate: none')
+    const { buttons, texts } = await ledger($, {}, surface)
+    expect(buttons).toEqual([
+      closed('P1', 'completed', 3),
+      closed('P2', 'completed'),
+      { key: 'phase:P3', label: '▾ P3 running · 0 fixes' },
+      { key: 'running:code-reviewer', label: 'code-reviewer running 0m00s' },
+      closed('P4', 'pending'),
+      closed('P5', 'pending'),
+      closed('P6', 'pending'),
+      closed('P7', 'pending'),
+    ])
+    expect(texts).toEqual([
+      { text: MID_HEADER, dim: false },
+      { text: 'component-builder build-implement PASS 12:51 · no transcript', dim: true },
+      { text: 'remediation 0/2 · gate: none', dim: false },
+    ])
   }
 })
 
-test('pane 1c. the last three events, newest last', async ($, on) => {
+test('ledger pane 2. pressing a phase writes the inverse of what it shows; a stored choice holds across refreshes', async ($, on) => {
+  const state = engine(on)
+  answerFs(on, BUILD_MID_PHASE)
+  await start($)
+  const builderRun = 'component-builder build-implement PASS 12:51 · no transcript'
+
+  await press($, 'phase:P1')
+  expect(state.expanded).toEqual({ [WF]: { P1: true } })
+  let drawn = await ledger($)
+  expect(drawn.buttons[0].label).toBe('▾ P1 completed · 3 fixes')
+  expect(drawn.texts.map(t => t.text)).toContain('— REM-FIX 1')
+
+  await press($, 'phase:P3')
+  expect(state.expanded).toEqual({ [WF]: { P1: true, P3: false } })
+  await $.turn.complete(turnDone)
+  drawn = await ledger($)
+  expect(drawn.buttons.find(b => b.key === 'phase:P3')?.label).toBe('▸ P3 running · 0 fixes')
+  expect(drawn.texts.map(t => t.text)).not.toContain(builderRun)
+  expect(drawn.texts.map(t => t.text)).toContain('— REM-FIX 1')
+})
+
+test('ledger pane 3. a spawned reviewer is a running Button; after its APPROVE lands it is a step Button that opens its transcript', async ($, on) => {
+  const state = engine(on)
+  const disk = answerFs(on, BUILD_MID_PHASE)
+  await start($)
+  await $.agent.spawn(reviewer)
+  expect((await ledger($)).buttons.map(b => b.key)).toContain('running:code-reviewer')
+
+  disk.fixture = { ...BUILD_MID_PHASE, eventsText: BUILD_MID_PHASE.eventsText + APPROVE }
+  await $.tool.call({ tool: 'Bash', command: "printf '...' >> .cc10x/workflows/" + WF + '.events.jsonl' })
+  const key = 'step:' + parseEvents(BUILD_MID_PHASE.eventsText).length
+  const { buttons } = await ledger($)
+  expect(buttons.map(b => b.key)).not.toContain('running:code-reviewer')
+  expect(buttons).toContainEqual({ key, label: 'code-reviewer build-review APPROVE 12:51' })
+
+  await press($, key)
+  expect(state.views).toEqual([{ agentId: 'agent-1' }])
+  expect(state.toasts).toEqual([])
+})
+
+test('ledger pane 4. an unbound chain step is dim Text noting no transcript, never a Button; a non-chain result has no note', async ($, on) => {
+  engine(on)
+  answerFs(on, PLAN_AT_GAP1)
+  await start($)
+
+  const { buttons, texts } = await ledger($)
+  expect(buttons).toEqual([{ key: 'phase:PLAN', label: '▾ PLAN running · 0 fixes' }])
+  const steps = texts.filter(t => t.dim).map(t => t.text)
+  expect(steps[0]).toBe('exploration plan DESIGN_SAVED 06:42')
+  expect(steps[1]).toMatch(/^planner plan-create NEEDS_CLARIFICATION \d\d:\d\d · no transcript$/)
+  expect(steps).toHaveLength(2)
+})
+
+test('ledger pane 5. viewing an agent draws back to conversation first, which views the main conversation; none in the main view', async ($, on) => {
+  const state = engine(on)
+  answerFs(on, BUILD_MID_PHASE)
+  await start($)
+
+  expect((await ledger($, { agentId: 'agent-1' })).buttons[0]).toEqual({ key: 'back', label: 'back to conversation' })
+  await press($, 'back', { agentId: 'agent-1' })
+  expect(state.views).toEqual([{}])
+  expect((await ledger($)).buttons.map(b => b.key)).not.toContain('back')
+})
+
+test('ledger pane 6. a denied or rejected transcript view toasts its reason and writes no state', async ($, on) => {
+  const state = engine(on)
+  answerFs(on, BUILD_MID_PHASE)
+  await start($)
+  await $.agent.spawn(reviewer)
+
+  state.viewDeny = 'no agent holds the id'
+  await press($, 'running:code-reviewer')
+  expect(state.toasts).toEqual(['cc10x: no agent holds the id'])
+
+  state.viewDeny = ''
+  state.viewReject = 'view hook refused'
+  await press($, 'running:code-reviewer')
+  expect(state.toasts).toHaveLength(2)
+  expect(state.toasts[1]).toMatch(/^cc10x: .*view hook refused/)
+  expect(state.expandedWrites).toBe(0)
+})
+
+test('ledger pane 7. a workflow that finishes draws its ledger: the finished header, seven phases with P7 open, no footer', async ($, on) => {
+  engine(on)
+  const disk = answerFs(on, BUILD_MID_PHASE)
+  await start($)
+  disk.fixture = FINISHED_BUILD
+  await $.turn.complete(turnDone)
+
+  const { buttons, texts } = await ledger($)
+  expect(texts[0].text).toMatch(/^cc10x · BUILD wf-20261018T112922Z-7e99ef54 · finished 2026-10-\d\dT/)
+  expect(buttons.map(b => b.label)).toEqual([
+    '▸ P1 completed · 3 fixes',
+    '▸ P2 completed · 0 fixes',
+    '▸ P3 completed · 3 fixes',
+    '▸ P4 completed · 4 fixes',
+    '▸ P5 completed · 4 fixes',
+    '▸ P6 completed · 3 fixes',
+    '▾ P7 completed · 0 fixes',
+  ])
+  expect(texts.slice(1).map(t => t.text)).toEqual(['router build-finish COMMITTED 07:09', 'router build-finish DONE 07:15'])
+  expect(texts.some(t => /remediation|no live workflow/.test(t.text))).toBe(false)
+})
+
+test('ledger pane 8. a refused expanded write is logged and the pane still draws', async ($, on) => {
+  const logs: string[] = []
+  engine(on, logs, ['expanded'])
+  answerFs(on, BUILD_MID_PHASE)
+  await start($)
+
+  await press($, 'phase:P1')
+  expect(logs.some(l => l.startsWith('cc10x: expand failed:') && l.includes('state store down'))).toBe(true)
+  const { buttons, texts } = await ledger($)
+  expect(buttons[0].label).toBe('▸ P1 completed · 3 fixes')
+  expect(texts[0].text).toBe(MID_HEADER)
+})
+
+test('ledger pane 9. BUILD_REMEDIATION: P1 open shows the REM-FIX marker between hunter CLEAN and builder FIXED, remediation 1/2', async ($, on) => {
   engine(on)
   answerFs(on, BUILD_REMEDIATION)
   await start($)
 
-  const lines = await texts($)
-  const events = lines.slice(lines.indexOf('last events') + 1)
-  expect(events).toEqual([
-    '11:44 result_persisted failure-hunter build-hunt CLEAN',
-    '11:45 remediation_created router build-implement remfix',
-    '11:51 result_persisted component-builder build-implement FIXED',
-  ])
+  const lines = (await ledger($)).texts.map(t => t.text)
+  expect(lines[0]).toBe('cc10x · BUILD ' + REM_WF + ' · /repo/loop-pane-fixture.md')
+  const hunt = lines.findIndex(l => l.startsWith('failure-hunter build-hunt CLEAN'))
+  expect(hunt).toBeGreaterThan(0)
+  expect(lines[hunt + 1]).toBe('— REM-FIX 1')
+  expect(lines[hunt + 2]).toMatch(/^component-builder build-implement FIXED 11:51/)
+  expect(lines.at(-1)).toBe('remediation 1/2 · gate: none')
+})
+
+test('ledger pane stale. a loop view stored before the ledger existed draws its header and no phases, never a render failure', async ($, on) => {
+  const logs: string[] = []
+  engine(on, logs, ['preLedger'])
+  const disk = answerFs(on, BUILD_MID_PHASE)
+  await start($)
+  const live = await ledger($)
+  expect(live.texts[0].text).toBe(MID_HEADER)
+  expect(live.buttons).toEqual([])
+
+  disk.fixture = FINISHED_BUILD
+  await $.turn.complete(turnDone)
+  const finished = await ledger($)
+  expect(finished.texts[0].text).toMatch(/^cc10x · workflow wf-20261018T112922Z-7e99ef54 · finished 2026-10-/)
+  expect(finished.buttons).toEqual([])
+  expect(logs.some(l => l.includes('pane render failed'))).toBe(false)
 })
 
 test('pane 2. TRIAGE_NEEDS_INFO: the pending gate', async ($, on) => {
@@ -684,7 +865,7 @@ test('pane 4b. an events log that cannot be read keeps the previous live view an
 
   const drawn = await pane($)
   expect(drawn[0].text).toMatch(/^cc10x · BUILD wf-20261018T112922Z-7e99ef54/)
-  expect(drawn.map(t => t.text)).toContain('P1 ✓ P2 ✓ P3 ▶ P4 · P5 · P6 · P7 ·')
+  expect((await ledger($)).buttons.slice(0, 3).map(b => b.label)).toEqual(['▸ P1 completed · 3 fixes', '▸ P2 completed · 0 fixes', '▾ P3 running · 0 fixes'])
   const error = drawn.find(t => t.text.includes('events log unreadable'))
   expect(error?.dim).toBe(true)
   expect(error?.text).toContain('EACCES: log refused')
@@ -699,7 +880,6 @@ test('pane 5. the newest artifact with no events log yet is live with no events,
   const lines = await texts($)
   expect(state.loop?.error).toBe(null)
   expect(lines[0]).toMatch(/^cc10x · BUILD wf-20261018T112922Z-7e99ef54/)
-  expect(lines).toContain('no events yet')
   expect(lines.some(l => /unreadable|missing|error/.test(l))).toBe(false)
 })
 
@@ -826,31 +1006,6 @@ test('pane 9. a multi-line user_request is one header line, whitespace collapsed
   expect((await texts($))[0]).toBe('cc10x · BUILD ' + REM_WF + ' · fix the pane header')
 })
 
-test('pane 8. PLAN_AT_GAP1: raw cursor plan-create, the planner NEEDS_CLARIFICATION, gap reviewer pending, no phase row', async ($, on) => {
-  engine(on)
-  answerFs(on, PLAN_AT_GAP1)
-  await start($)
-
-  const lines = await texts($)
-  expect(lines).toContain('cursor: plan-create')
-  expect(lines.some(l => /^✓ planner +NEEDS_CLARIFICATION/.test(l))).toBe(true)
-  expect(lines.some(l => /^· plan-gap-reviewer/.test(l))).toBe(true)
-  expect(lines.some(l => /^P\d/.test(l))).toBe(false)
-})
-
-test('carried 1. a workflow that finishes shows last in the pane, never its live view', async ($, on) => {
-  engine(on)
-  const disk = answerFs(on, BUILD_MID_PHASE)
-  await start($)
-  disk.fixture = FINISHED_BUILD
-  await $.turn.complete(turnDone)
-
-  const lines = await texts($)
-  expect(lines[0]).toBe('no live workflow')
-  expect(lines[1]).toMatch(/^\(last: wf-20261018T112922Z-7e99ef54 finished 2026-10-\d\dT/)
-  expect(lines.some(l => /^cc10x · /.test(l) || /^cursor:/.test(l))).toBe(false)
-})
-
 test('carried 2. the error is a dim pane line; the band keeps only the stale marker', async ($, on) => {
   engine(on)
   const disk = answerFs(on, BUILD_MID_PHASE)
@@ -873,16 +1028,6 @@ test('carried 3. past the breaker: pane remediation 5 (breaker 2), band rem 5', 
 
   expect(await texts($)).toContain('remediation 5 (breaker 2) · gate: none')
   expect(await band($)).toMatch(/ · rem 5$/)
-})
-
-test('carried 4. a result outside the chain is a + row, distinct from the chain rows', async ($, on) => {
-  engine(on)
-  answerFs(on, PLAN_AT_GAP1)
-  await start($)
-
-  const lines = await texts($)
-  expect(lines).toContain('+ exploration DESIGN_SAVED 06:42 (plan)')
-  expect(lines.some(l => /^✓ exploration/.test(l))).toBe(false)
 })
 
 test('pane warnings. a warning is a dim line', async ($, on) => {
@@ -1071,9 +1216,7 @@ test('cwd 12. outside the root, a shown workflow that finishes stays named as la
   for (let i = 0; i < 3; i++) {
     await $.turn.complete(turnDone)
     expect(state.loop?.last?.wf).toBe(WF)
-    const lines = await texts($)
-    expect(lines[0]).toBe('no live workflow')
-    expect(lines[1]).toMatch(/^\(last: wf-20261018T112922Z-7e99ef54 finished /)
+    expect((await texts($))[0]).toMatch(/^cc10x · BUILD wf-20261018T112922Z-7e99ef54 · finished 2026-10-/)
   }
 })
 

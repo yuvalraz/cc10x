@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { CoreEngineInterface, Register } from 'claude-code'
 
-import type { LoopState, LoopView, Spawn, Step } from '../types'
+import type { Expanded, LedgerPhase, LedgerStep, LoopState, LoopView, Spawn } from '../types'
 import { REMEDIATION, ROUTES } from './loop-routes'
 import { BREAKER, WORKFLOWS, bandLine, deriveLedger, deriveLoop, elapsed, insideRoot, isFinished, parseEvents, remediation, workflowDirs, workflowOf, type Artifact } from './loop-state'
 
@@ -10,6 +10,8 @@ const EMPTY: LoopView = { live: null, last: null, error: null }
 export const loop = atom({ plugin: 'cc10x', key: 'loop' } as const, EMPTY)
 export const spawns = atom({ plugin: 'cc10x', key: 'spawns' } as const, [] as Spawn[])
 const opened = atom({ plugin: 'cc10x', key: 'opened' } as const, [] as string[])
+// shortcut: no cap on expanded keys, cap at 20 like opened if a session ever runs dozens of workflows.
+const expanded = atom({ plugin: 'cc10x', key: 'expanded' } as const, {} as Expanded)
 
 // Every agent some chain dispatches (the router is no spawn).
 const AGENTS = new Set(
@@ -160,31 +162,15 @@ async function openOnce($: Api, id: string): Promise<void> {
 
 // shortcut: times are the UTC hh:mm the router stamped; convert to local time if users ask.
 const hhmm = (ts: string | null) => ts?.slice(11, 16) ?? ''
-const MARK = { done: '✓', running: '▶', pending: '·' } as const
+const join = (parts: string[], by = ' ') => parts.filter(p => p !== '').join(by)
+const reason = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
-// The pane's lines for a live workflow: header, cursor, phases, steps, remediation, last three events.
-function paneLines(live: LoopState, now: number): string[] {
-  const join = (parts: string[], by = ' ') => parts.filter(p => p !== '').join(by)
-  const row = (s: Step) =>
-    join([
-      // A result outside the chain is marked + (always done), so it never reads as a chain step.
-      s.extra ? '+' : MARK[s.status],
-      s.agent,
-      s.status === 'running' ? 'running ' + elapsed(now - (s.startedAt ?? now)) : (s.decision ?? ''),
-      hhmm(s.at),
-      '(' + s.phase + ')',
-    ])
-  const phases = live.phases.map(p => p.id + ' ' + (p.status === 'completed' ? '✓' : p.id === live.cursor ? '▶' : '·'))
-  const rounds = remediation(live.rounds) + (live.rounds > BREAKER ? ' (breaker ' + BREAKER + ')' : '')
-  const events = live.events.slice(-3).map(e => join([hhmm(e.ts), e.event, e.agent, e.phase, e.decision ?? '']))
-  return [
-    join(['cc10x', join([live.type, live.wf]), live.request.replace(/\s+/g, ' ').slice(0, 40), live.otherLive > 0 ? `+${live.otherLive} other live` : ''], ' · '),
-    `cursor: ${live.rawCursor ?? 'none'}`,
-    join(phases),
-    ...live.steps.map(row),
-    `remediation ${rounds} · gate: ${live.gate ?? 'none'}`,
-    ...(events.length > 0 ? ['last events', ...events] : ['no events yet']),
-  ].filter(l => l !== '')
+// Opens an agent's transcript (`{}`: the main conversation); a refusal, resolved or thrown, is a toast.
+function view($: Api, target: { agentId?: string }): void {
+  void $.ui
+    .view(target)
+    .then(shown => shown.deny && $.ui.toast('cc10x: ' + shown.deny))
+    .catch(err => $.ui.toast('cc10x: ' + reason(err)))
 }
 
 export const register: Register = on => {
@@ -223,11 +209,12 @@ export const register: Register = on => {
   })
 
   // Records a started cc10x chain agent against the live workflow as it stands now, then re-reads so the row runs.
-  // A resumed agent is not recorded again: its first record already holds the agentId.
+  // A resumed agent is a new run recorded under the id it continues under, so its next result binds to it.
   on('agent.spawn', async ($, e, next) => {
     const started = await next(e)
     const agent = SPAWNED.exec(e.subagentType)?.[1]
-    if (started.deny === undefined && e.resume === undefined && agent !== undefined && AGENTS.has(agent)) {
+    const agentId = e.resume?.agentId ?? started.agentId
+    if (started.deny === undefined && agent !== undefined && AGENTS.has(agent)) {
       // A router write the tool.call filter missed may have moved the boundary: read before recording,
       // and record from this read even when a parallel spawn's newer read superseded its write.
       const { live } = (await readLoop($)).view
@@ -237,7 +224,7 @@ export const register: Register = on => {
         startedAt: await $.clock.now(),
         phaseId: live?.cursor ?? 'N/A',
         wf: live?.wf ?? '',
-        ...(typeof started.agentId === 'string' ? { agentId: started.agentId } : {}),
+        ...(typeof agentId === 'string' ? { agentId } : {}),
       }
       await update($, spawns, list => [...list, spawn].slice(-200))
       await readLoop($)
@@ -306,20 +293,54 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
     const { live, last, error } = await read($, loop)
-    // A finished workflow is never drawn live: the scan yields live null and names it in last.
-    const lines =
+    const now = await $.clock.now()
+    const shown = live ?? last
+    const key = shown === null ? '' : shown.wf || shown.path
+    const stored = (await read($, expanded))[key] ?? {}
+    // The only state write the pane makes, and only on a press: a render may not write.
+    const toggle = (id: string, open: boolean) => async () => {
+      try {
+        await update($, expanded, m => ({ ...m, [key]: { ...m[key], [id]: !open } }))
+      } catch (err) {
+        $.ui.log(`cc10x: expand failed: ${reason(err)}`)
+      }
+    }
+    const step = (s: LedgerStep, n: number) => {
+      if (s.kind === 'remfix') return <Text dimColor>{'— REM-FIX ' + n}</Text>
+      const label = s.kind === 'running' ? s.agent + ' running ' + elapsed(now - (s.startedAt ?? now)) : join([s.agent, s.taskPhase, s.decision ?? '', hhmm(s.at)])
+      const { agentId } = s
+      if (agentId === undefined) return <Text dimColor>{label + (AGENTS.has(s.agent) ? ' · no transcript' : '')}</Text>
+      const id = s.kind === 'running' ? 'running:' + s.agent : 'step:' + s.index
+      return <Button key={id} label={label} plain onPress={() => view($, { agentId })} />
+    }
+    const phase = (p: LedgerPhase) => {
+      const open = stored[p.id] ?? p.isCursor
+      let fixes = 0
+      return (
+        <Box flexDirection="column">
+          <Button key={'phase:' + p.id} label={(open ? '▾ ' : '▸ ') + p.id + ' ' + p.status + ' · ' + p.rounds + (p.rounds === 1 ? ' fix' : ' fixes')} plain onPress={toggle(p.id, open)} />
+          {open && <Box flexDirection="column" paddingLeft={2}>{p.steps.map(s => step(s, s.kind === 'remfix' ? ++fixes : 0))}</Box>}
+        </Box>
+      )
+    }
+    // A view stored by an older build has no ledger or type: it draws with no phases until the next refresh.
+    const header =
       live !== null
-        ? paneLines(live, await $.clock.now())
-        : ['no live workflow', ...(last === null ? [] : [`(last: ${last.wf} finished${last.finishedAt ? ' ' + last.finishedAt : ''})`])]
+        ? join(['cc10x', join([live.type, live.wf]), live.request.replace(/\s+/g, ' ').slice(0, 40), live.otherLive > 0 ? `+${live.otherLive} other live` : ''], ' · ')
+        : last !== null
+          ? join(['cc10x', join([last.type ?? 'workflow', last.wf]), 'finished' + (last.finishedAt ? ' ' + last.finishedAt : '')], ' · ')
+          : 'no live workflow'
+    const footer = live === null ? '' : `remediation ${remediation(live.rounds) + (live.rounds > BREAKER ? ' (breaker ' + BREAKER + ')' : '')} · gate: ${live.gate ?? 'none'}`
     const dim = [...(live?.warnings ?? []), ...(error === null ? [] : [error])]
 
     return (
       <Box flexDirection="column">
-        {lines.map(l => (
-          <Text>{l}</Text>
-        ))}
+        {e.props.view.agentId !== undefined && <Button key="back" label="back to conversation" plain onPress={() => view($, {})} />}
+        <Text>{header}</Text>
+        {(shown?.ledger ?? []).map(phase)}
+        {footer !== '' && <Text>{footer}</Text>}
         {dim.map(l => (
           <Text dimColor>{l}</Text>
         ))}
