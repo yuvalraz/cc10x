@@ -1754,9 +1754,9 @@ def phase_cap_action(case: dict[str, Any]) -> tuple[str, bool]:
 
 
 def phase_cap_stop(case: dict[str, Any]) -> Any:
-    """The cursor phase's status after `Stop here`: a BUILD with a plan blocks it unless it is already completed."""
+    """The cursor phase's status after `Stop here`: QA and a BUILD with a plan block it unless it is already completed."""
     status = case.get("phase_status")
-    return "blocked" if case["phased"] and status != "completed" else status
+    return "blocked" if (case["phased"] or case.get("qa")) and status != "completed" else status
 
 
 def locate_resume(case: dict[str, Any]) -> dict[str, Any]:

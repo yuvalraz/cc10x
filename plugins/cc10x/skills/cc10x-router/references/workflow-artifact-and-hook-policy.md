@@ -210,7 +210,7 @@ Workflow event log:
   - `contract_parsed`
   - `scope_decision_requested`
   - `scope_decision_resolved`
-- `workflow_completed` and `workflow_failed` are not appended by any router step either; the hooklib finished-workflow check that SessionStart and the state snapshots use accepts them, with `memory_finalized`, as terminal markers when one is present as the last `status_history` event.
+- `workflow_completed` is not appended by any router step. `workflow_failed` is appended to `status_history` when the user ends a workflow at its gate, and to this log too when that gate is the circuit breaker's (`### Circuit breaker` in `remediation-and-research.md`); the hooklib finished-workflow check that SessionStart and the state snapshots use accepts both, with `memory_finalized`, as terminal markers when one is present as the last `status_history` event.
 - The hook scripts keep a separate log, `cc10x-hook-events.log`, for their own audit lines (`subagent_stop`, `instructions_loaded`, `stop_failure`, guard decisions); those are not workflow events.
 
 Hook policy:

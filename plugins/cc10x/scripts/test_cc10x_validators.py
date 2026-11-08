@@ -1314,6 +1314,7 @@ L1_MUTATIONS = [
     ("multi-phase-resume-events.json", _cap_expect(9, "expected_action", "ask_user"), "phase cap for"),  # build-finish counted in a phase-less workflow
     ("multi-phase-resume-events.json", _cap_expect(1, "expected_stop", "partial"), "phase cap stop for"),  # Stop does not block an open phase
     ("multi-phase-resume-events.json", _cap_expect(10, "expected_stop", "blocked"), "phase cap stop for"),  # Stop blocks a passed phase
+    ("multi-phase-resume-events.json", _cap_expect(7, "expected_stop", "partial"), "phase cap stop for"),  # QA's Stop leaves its phase open
     ("multi-phase-resume-events.json", _cap_no_cases, "no phase_cap cases"),
     ("triage-needs-info-pause.json", _triage_pause_wrong_gate, "pending_gate must be 'needs_info'"),
     ("codebase-health-candidate-pause.json", _health_pause_wrong_gate, "pending_gate must be 'candidate_choice'"),

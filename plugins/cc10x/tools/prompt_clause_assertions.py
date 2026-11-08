@@ -302,14 +302,43 @@ BREAKER_FINISH = (
 )
 BREAKER_ASK = (
     "- When the count is 2 or more, ask the user before creating the next REM-FIX: `Run one more REM-FIX cycle` (asked"
-    " again before each further cycle) or `Stop here (Recommended)`, which persists state, stops with nothing reverted,"
-    " appends a `status_history` entry and never marks a passed phase blocked: in QA and in a BUILD with a plan it sets"
-    " `phase_status[phase_cursor]` to `blocked` unless that phase is already `completed` (as in the final-review wave or"
-    " a fix after the last PASS), and otherwise leaves `phase_status` unchanged. In QA the workflow continues only when a"
-    " new request names it. Elsewhere Stop sets `pending_gate` to `phase_blocked`, and the user's next reply answers that"
-    " gate: a reply asking to continue resumes the workflow (this ask comes again at the next block); an explicit stop or"
-    " end reply ends it, and ending it is recorded as `workflow_failed` in `status_history` and clears `pending_gate`; any"
-    " other reply keeps the gate: answer it, then ask again."
+    " again before each further cycle) or `Stop here (Recommended)`. Outside QA the ask sets `pending_gate` to"
+    " `phase_blocked`, which `Run one more REM-FIX cycle` clears. `Stop here (Recommended)` persists state, stops with"
+    " nothing reverted, appends a `status_history` entry and never marks a passed phase blocked: in QA and in a BUILD with"
+    " a plan it sets `phase_status[phase_cursor]` to `blocked` unless that phase is already `completed` (as in the"
+    " final-review wave or a fix after the last PASS), and otherwise leaves `phase_status` unchanged. In QA the workflow"
+    " continues only when a new request names it. Elsewhere Stop keeps `pending_gate` at `phase_blocked`, and the user's"
+    " next reply answers that gate: a reply asking to continue is `Run one more REM-FIX cycle` for the same block; an"
+    " explicit stop or end reply ends the workflow: record the answer, persist any captured notes to the artifact"
+    " `memory_notes`, run Memory Update inline, list each open `deferred_findings` entry in the stop message, then append"
+    " `workflow_failed` as the last `status_history` entry and to the events log; any other reply keeps the gate: answer"
+    " it, then ask again."
+)
+POLICY_WORKFLOW_FAILED = (
+    "- `workflow_completed` is not appended by any router step. `workflow_failed` is appended to `status_history` when the"
+    " user ends a workflow at its gate, and to this log too when that gate is the circuit breaker's (`### Circuit"
+    " breaker` in `remediation-and-research.md`); the hooklib finished-workflow check that SessionStart and the state"
+    " snapshots use accepts both, with `memory_finalized`, as terminal markers when one is present as the last"
+    " `status_history` event."
+)
+ROUTER_TERMINAL_TEST = (
+    "Terminal test: a workflow is terminal when its events log or `status_history` holds `memory_finalized`,"
+    " `workflow_completed` or `workflow_failed`, or its `phase_cursor` is `memory-finalize` and completed. Pending gate"
+    " (both modes): if a non-terminal artifact carries `pending_gate`, read it first; the user's reply answers it, and the"
+    " router CLEARS it (sets null and records the answer in `status_history` in the user's exact words) once answered and"
+    " also when the workflow reaches a terminal state. An answer that ends the workflow is recorded before its"
+    " `workflow_failed` entry, which stays the last `status_history` entry."
+)
+CHANGELOG_BREAKER = (
+    "- **Per-phase circuit breaker.** The workflow-wide remediation count is gone. Each phase gets 2 REM-FIX cycles, and"
+    " the final whole-branch review's `phase:build-finish` rounds get their own 2; the router counts the cursor phase's"
+    " rounds in both `remediation_history` (entries now carry `phase_id`) and the `remediation_created` events and takes"
+    " the larger. At the cap it asks before each further cycle, `Run one more REM-FIX cycle` or `Stop here"
+    " (Recommended)`, under the `phase_blocked` gate outside QA; Stop persists state, reverts nothing and never blocks a"
+    " passed phase, and outside QA a later continue reply runs one more cycle for the same block while an explicit end"
+    " runs Memory Update, lists the open `deferred_findings` and records `workflow_failed` in `status_history` and the"
+    " events log. DEBUG, QA and a BUILD with no plan count as one phase, so they ask after 2 rounds. The loop pane's `rem`"
+    " count is per phase too, against 2. Replay `phase_cap_cases` in `multi-phase-resume-events.json` pin the count."
 )
 BREAKER_HISTORY = (
     "**Remediation history (MANDATORY — do not skip):** each remediation round appends exactly one entry to the workflow"
@@ -2934,6 +2963,8 @@ ASSERTIONS = [
         SKILLS / "cc10x-router" / "references" / "remediation-and-research.md",
         lambda text: text.count("\n### Circuit breaker\n") == 1
         and pinned_line(text, BREAKER_ASK)
+        and "a reply asking to continue resumes the workflow" not in text
+        and "ending it is recorded as `workflow_failed` in `status_history` and clears `pending_gate`" not in text
         and len(re.findall(r">= ?3", text)) == 0
         and "`>= 3` circuit breaker above" not in text
         and "count >= 3 circuit-breaker gate" not in text
@@ -3774,6 +3805,25 @@ ASSERTIONS = [
         POLICY_REF,
         lambda text: pinned_line(text, POLICY_REMEDIATION_EVENT),
         "the breaker tells build-finish rounds apart by the event's phase, so it must not be the task phase",
+    ),
+    A(
+        "policy: workflow_failed is appended when the user ends a workflow, and the breaker's ending logs it too",
+        POLICY_REF,
+        lambda text: pinned_line(text, POLICY_WORKFLOW_FAILED)
+        and "`workflow_completed` and `workflow_failed` are not appended by any router step" not in text,
+        "the hooks read the last status_history entry and the newest log record, so the ending must write both",
+    ),
+    A(
+        "router: an answer that ends a workflow is recorded before workflow_failed, which stays last",
+        SKILLS / "cc10x-router" / "SKILL.md",
+        lambda text: pinned_line(text, ROUTER_TERMINAL_TEST),
+        "a gate answer appended after workflow_failed hides the ending from the hooks' last-entry check",
+    ),
+    A(
+        "CHANGELOG: the per-phase breaker bullet matches the circuit breaker's Stop and end path",
+        ROOT / "CHANGELOG.md",
+        lambda text: pinned_line(text, CHANGELOG_BREAKER),
+        "the release note must not describe Stop more narrowly than the rule",
     ),
     A(
         "remediation: on a task-count mismatch the breaker uses the LARGER of the two counts and reports it",

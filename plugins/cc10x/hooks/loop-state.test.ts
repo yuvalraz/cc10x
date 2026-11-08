@@ -696,4 +696,6 @@ test('42. per phase: at cursor P2 only P2 rounds count, and build-finish rounds 
   // the newest round is build-finish: the final-review wave shows its own count
   expect(rounds([...history, { phase: 'build-review', phase_id: 'P2' }], [...events, fix('build-finish', 'P2')])).toBe(2)
   expect(rounds([...history, { phase: 'build-finish', phase_id: 'P2' }], events)).toBe(2) // a missed log record
+  // the newest history entry is build-finish while the log missed it: still the final-review wave
+  expect(rounds([...history, { phase: 'build-finish', phase_id: 'P2' }], events.slice(0, 2))).toBe(2)
 })

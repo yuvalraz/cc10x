@@ -908,7 +908,10 @@
         {"phase": "qa-build"},
         {"phase": "qa-review"}
       ],
-      "expected_action": "ask_user"
+      "qa": true,
+      "phase_status": "partial",
+      "expected_action": "ask_user",
+      "expected_stop": "blocked"
     },
     {
       "name": "(i) a no-plan BUILD compares N/A and missing phase ids as one phase",
