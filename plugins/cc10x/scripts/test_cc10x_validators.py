@@ -1129,6 +1129,14 @@ def _locator_drop_request_match(d):
     d["locator_cases"][3]["request_matches"] = []
 
 
+def _cap_expect(index, key, value):
+    return lambda d: d["phase_cap_cases"][index].update({key: value})
+
+
+def _cap_no_cases(d):
+    d["phase_cap_cases"] = []
+
+
 def _triage_pause_wrong_gate(d):
     d["starting_artifact"]["pending_gate"] = "needs_grilling"
 
@@ -1296,6 +1304,15 @@ L1_MUTATIONS = [
     ("multi-phase-resume-events.json", _locator_unterminate, "resume locator"),
     ("multi-phase-resume-events.json", _locator_single_paused, "resume locator"),
     ("multi-phase-resume-events.json", _locator_drop_request_match, "resume locator"),
+    ("multi-phase-resume-events.json", _cap_expect(1, "expected_action", "create_remfix"), "phase cap for"),
+    ("multi-phase-resume-events.json", _cap_expect(2, "expected_action", "ask_user"), "phase cap for"),  # build-finish counted for the phase
+    ("multi-phase-resume-events.json", _cap_expect(3, "expected_action", "ask_user"), "phase cap for"),  # workflow-wide count
+    ("multi-phase-resume-events.json", _cap_expect(5, "expected_action", "create_remfix"), "phase cap for"),  # no build-finish cap
+    ("multi-phase-resume-events.json", _cap_expect(6, "expected_action", "create_remfix"), "phase cap for"),  # history ignored
+    ("multi-phase-resume-events.json", _cap_expect(6, "expected_mismatch", False), "phase cap mismatch for"),
+    ("multi-phase-resume-events.json", _cap_expect(7, "expected_action", "create_remfix"), "phase cap for"),  # QA split by cursor
+    ("multi-phase-resume-events.json", _cap_expect(9, "expected_action", "ask_user"), "phase cap for"),  # build-finish counted in a phase-less workflow
+    ("multi-phase-resume-events.json", _cap_no_cases, "no phase_cap cases"),
     ("triage-needs-info-pause.json", _triage_pause_wrong_gate, "pending_gate must be 'needs_info'"),
     ("codebase-health-candidate-pause.json", _health_pause_wrong_gate, "pending_gate must be 'candidate_choice'"),
     ("triage-needs-info-pause.json", _advisory_converged, "advisory workflow must carry convergence_state N/A"),

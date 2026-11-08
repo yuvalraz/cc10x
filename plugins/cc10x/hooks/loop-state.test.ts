@@ -347,8 +347,8 @@ test('22. an extra row never pins next: 0161b108 mid P4 reads next: router (memo
   expect(state.cursor).toBe('P4')
   expect(row(state.steps, 'router', 'build-finish')).toMatchObject({ status: 'done', decision: 'pushed', extra: false })
   expect(row(state.steps, 'planner', 're-plan')).toMatchObject({ status: 'done', decision: 'PLAN_CREATED', extra: true })
-  // 0161b108's remediation_history holds nine rounds; past the breaker the band shows the bare count, never 9/3.
-  expect(bandLine(state, NOW)).toBe('cc10x BUILD P4/4 · next: router · rem 9')
+  // 0161b108's remediation_history holds one round on P4, the cursor phase.
+  expect(bandLine(state, NOW)).toBe('cc10x BUILD P4/4 · next: router · rem 1/2')
 })
 
 test('23. normalized_phases: numeric and bare-string entries are their own ids; an entry with no id warns', () => {
@@ -408,7 +408,7 @@ test('26. DEBUG: a reused never-run verifier result on debug-verify completes th
     'integration-verifier/re-verify done PASS',
     'router/memory-finalize pending',
   ])
-  expect(bandLine(state, NOW)).toBe('cc10x DEBUG · next: router · rem 1/3')
+  expect(bandLine(state, NOW)).toBe('cc10x DEBUG · next: router · rem 1/2')
 })
 
 test('27. QA: after re-qa-build the original qa-execute runs and completes the executor row', () => {
@@ -429,7 +429,7 @@ test('27. QA: after re-qa-build the original qa-execute runs and completes the e
     'qa-executor/qa-execute done PASS',
     'router/memory-finalize pending',
   ])
-  expect(bandLine(state, NOW)).toBe('cc10x QA · next: router · rem 1/3')
+  expect(bandLine(state, NOW)).toBe('cc10x QA · next: router · rem 1/2')
 })
 
 test('28. every REMEDIATION chain: an original-phase result completes a reused row; fresh remediation tasks stay pending', () => {
@@ -473,7 +473,7 @@ test('29. a trivial BUILD after remediation_created runs REM-FIX, re-review, re-
     'integration-verifier/re-verify pending',
     'router/memory-finalize pending',
   ])
-  expect(bandLine(state, NOW)).toBe('cc10x BUILD · next: integration-verifier · rem 1/3')
+  expect(bandLine(state, NOW)).toBe('cc10x BUILD · next: integration-verifier · rem 1/2')
 })
 
 test('30. a spawn from another workflow binds no row, even with atIndex beyond the events', () => {
@@ -491,37 +491,37 @@ test('30. a spawn from another workflow binds no row, even with atIndex beyond t
   expect(row(own.steps, 'plan-gap-reviewer', 'plan-review-gap-1')?.status).toBe('running')
 })
 
-test('31. rem counts the whole workflow like the circuit breaker: a P1 remediation still shows at cursor P2', () => {
+test('31. rem counts the cursor phase like the circuit breaker: a P1 remediation does not show at cursor P2', () => {
   const p2 = (a: Artifact) => {
     a.phase_cursor = 'P2'
   }
   const state = loop(BUILD_REMEDIATION, [], p2)
   expect(state.cursor).toBe('P2')
-  expect(state.rounds).toBe(1)
-  expect(bandLine(state, NOW)).toContain('rem 1/3')
+  expect(state.rounds).toBe(0)
+  expect(bandLine(state, NOW)).not.toContain('rem ')
 
-  // 7e99ef54 mid P3 carries three P1 rounds in remediation_history.
-  expect(loop(BUILD_MID_PHASE).rounds).toBe(3)
+  // 7e99ef54 mid P3 carries three P1 rounds in remediation_history: none on P3.
+  expect(loop(BUILD_MID_PHASE).rounds).toBe(0)
 
-  // Without a remediation_history array, every remediation_created in the log counts.
+  // Without a remediation_history array, the log's remediation_created events at the cursor count.
   const noHistory = loop(BUILD_MID_PHASE, [], a => {
     delete a.remediation_history
   })
-  expect(noHistory.rounds).toBe(3)
+  expect(noHistory.rounds).toBe(0)
 
   // A count past the breaker is shown as is, never clamped.
   const over = loop(BUILD_REMEDIATION, [], a => {
     p2(a)
-    a.remediation_history = [{}, {}, {}, {}]
+    a.remediation_history = [{ phase_id: 'P2' }, { phase_id: 'P2' }, { phase_id: 'P2' }]
   })
-  expect(bandLine(over, NOW)).toMatch(/ · rem 4$/)
+  expect(bandLine(over, NOW)).toMatch(/ · rem 3$/)
 
   // At the breaker the count still reads against it.
   const at = loop(BUILD_REMEDIATION, [], a => {
     p2(a)
-    a.remediation_history = [{}, {}, {}]
+    a.remediation_history = [{ phase_id: 'P2' }, { phase_id: 'P2' }]
   })
-  expect(bandLine(at, NOW)).toMatch(/ · rem 3\/3$/)
+  expect(bandLine(at, NOW)).toMatch(/ · rem 2\/2$/)
 })
 
 test('32. a QA regression workflow (source_wf set) runs re-qa-execute then memory; DEBUG with source_wf keeps its chain', () => {
@@ -607,7 +607,7 @@ test('37. a remediated QA regression run: re-qa-build, a fresh qa-review / qa-hu
     'qa-executor/re-qa-execute pending',
     'router/memory-finalize pending',
   ])
-  expect(bandLine(state, NOW)).toBe('cc10x QA · qa-harness-builder running 0m00s · next: code-reviewer · rem 1/3')
+  expect(bandLine(state, NOW)).toBe('cc10x QA · qa-harness-builder running 0m00s · next: code-reviewer · rem 1/2')
 
   // The executor may log the rerun as qa-execute (REUSED): it completes re-qa-execute.
   const done = synthetic('QA_REGRESSION', [
@@ -670,4 +670,27 @@ test('41. insideRoot: the root itself and paths under it, trailing slashes ignor
   expect(insideRoot('/p/nx', '/p/n')).toBe(false)
   expect(insideRoot('/p', '/p/n')).toBe(false)
   expect(insideRoot('/tmp/x', '/')).toBe(true)
+})
+
+test('42. per phase: at cursor P2 only P2 rounds count, and build-finish rounds count toward no phase', () => {
+  const rounds = (history: unknown[], events: LoopEvent[]) =>
+    deriveLoop({
+      path: 'p',
+      artifact: { ...artifactOf('BUILD'), normalized_phases: ['P1', 'P2'], phase_cursor: 'P2', remediation_history: history },
+      events: [record('workflow_started'), ...events],
+      spawns: [],
+      otherLive: 0,
+      warnings: [],
+    }).rounds
+  const fix = (phase: string, phaseId: string) => record('remediation_created', 'router', phase, null, phaseId)
+
+  const events = [fix('build-review', 'P1'), fix('build-review', 'P2'), fix('build-finish', 'P2')]
+  const history = [
+    { phase: 'build-review', phase_id: 'P1' },
+    { phase: 'build-review', phase_id: 'P2' },
+    { phase: 'build-finish', phase_id: 'P2' },
+  ]
+  expect(rounds(history, events)).toBe(1)
+  expect(rounds([], [...events, fix('build-review', 'P2')])).toBe(2) // a missed history append: the log wins
+  expect(rounds([...history, { phase: 'build-review', phase_id: 'P2' }], events)).toBe(2) // a missed log record
 })

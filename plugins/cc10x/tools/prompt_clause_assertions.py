@@ -288,7 +288,58 @@ BUILD_FINISH_STEP_1A = (
     " the disposition in the artifact. An empty array is fine — just note \"no deferred findings\" and continue. This is"
     " surfacing-and-triage only; the router takes no automatic action on these findings."
 )
-ADR_0003 = ROOT / "docs" / "adr" / "0003-blocking-severity.md"
+# Tighter loops 2 P4: the per-phase circuit breaker. BREAKER_ASK is the only line that states the limit.
+BREAKER_COUNT = (
+    "- Count the current phase's remediation rounds two ways: the `remediation_history` entries whose `phase_id` is the"
+    " `phase_cursor`, and the events-log `remediation_created` events whose `details.phase_id` is the `phase_cursor`; on a"
+    " mismatch, report it to the user and use the LARGER of the two counts (a missed append on either side must never"
+    " lower the count). A workflow with empty `normalized_phases` (DEBUG, QA, a BUILD with no plan) is one phase: count"
+    " every round except `build-finish` ones, whatever its phase id."
+)
+BREAKER_FINISH = (
+    "- Rounds whose `phase` is `build-finish` count toward no phase: they are counted on their own, the same two ways,"
+    " under the same limit."
+)
+BREAKER_ASK = (
+    "- When the count is 2 or more, ask the user before creating the next REM-FIX: `Run one more REM-FIX cycle` (asked"
+    " again before each further cycle) or `Stop here (Recommended)`, which persists state, stops with nothing reverted and"
+    " never marks a passed phase blocked: in QA it sets `phase_status[phase_cursor]` to `blocked`; otherwise it sets"
+    " `pending_gate` to `phase_blocked`, also sets `phase_status[phase_cursor]` to `blocked` for a BUILD phase at"
+    " `phase_cursor`, and for a `build-finish` round, in DEBUG and in a BUILD with no plan leaves `phase_status` unchanged"
+    " and appends a `status_history` entry. The user's next reply answers that gate: a reply asking to continue resumes"
+    " the workflow (this ask comes again at the next block), any other reply ends it."
+)
+BREAKER_HISTORY = (
+    "**Remediation history (MANDATORY — do not skip):** each remediation round appends exactly one entry to the workflow"
+    " artifact's `remediation_history` array, `{ts, phase, reason, cycle_number}`, where `cycle_number` is this workflow's"
+    " running remediation count (starting at 1): immediately after creating the `kind:remfix` task when Task tools exist,"
+    " and when the router records the REM-FIX step in artifact-only mode or inline mode (no task exists then). The entry's"
+    " `phase` is the REM-FIX's `phase:` value (for example `build-review` or `build-finish`); in a workflow with non-empty"
+    " `normalized_phases` the entry also carries `phase_id`, the `phase_cursor` value. In the same step, append a"
+    " `remediation_created` event with `details.phase_id` (the `phase_cursor` value) to the events log; it is the boundary"
+    " the artifact-only resume rule reads (`SKILL.md` §4). The circuit breaker above is a router rule, and the router is"
+    " the only counter. The breaker count reads both `remediation_history` and the `remediation_created` events, and"
+    " artifact-only resume reads the event, so skip neither append."
+)
+ROUTER_CYCLE_ROW = (
+    "| **Cycle** | One complete plan → build → verify → learn iteration. The circuit breaker pauses a phase's remediation"
+    " loop for a human checkpoint (single definition: `references/remediation-and-research.md`); further cycles run only"
+    " on explicit user go-ahead. |"
+)
+ROUTER_BREAKER_RULE = (
+    "- Never let a phase's remediation loop pass the circuit breaker without a human checkpoint (`### Circuit breaker` in"
+    " `references/remediation-and-research.md` is the single definition)."
+)
+POLICY_REMEDIATION_EVENT = (
+    "  - `remediation_created` (one per remediation round, appended with its `remediation_history` entry; `phase` is the"
+    " REM-FIX's `phase:` value and `details.phase_id` as above)"
+)
+QA_BREAKER_LINES = (
+    "  circuit breaker counts those entries; artifact-only resume reads the `remediation_created`",
+    "  event that the same step appends to the events log. Skip the append and the breaker reads the",
+    "  events alone for the entire QA route, and the cap above is counted only in the conversation. The",
+)
+ADR_0003 =ROOT / "docs" / "adr" / "0003-blocking-severity.md"
 ADR_SUMMARY = (
     "Only CRITICAL and HIGH findings, plus the non-severity gates that already\n"
     "blocked, stop a BUILD phase. One REM-FIX takes the whole blocking set with\n"
@@ -1306,7 +1357,7 @@ ASSERTIONS = [
         "router: circuit breaker single-sourced",
         SKILLS / "cc10x-router" / "SKILL.md",
         contains_none("more than 3 cycles"),
-        "kernel defers to the >= 3 circuit breaker in remediation-and-research.md",
+        "kernel defers to the circuit breaker in remediation-and-research.md",
     ),
     A(
         "remediation: no undefined cycle-cap gate",
@@ -1933,14 +1984,12 @@ ASSERTIONS = [
         and "If the YAML block is absent or any required contract field is missing, whatever the envelope and heading say, run inline verification" in text,
         "inline verification triggers on concrete absence conditions (YAML block or a required field), not a vibe about output length",
     ),
-    # 80.5 — §11b Cycle row: checkpoint-at-3 semantics, not a hard cap
+    # 80.5 — §11b Cycle row: a human checkpoint per phase, not a hard cap
     A(
-        "router: Cycle row states checkpoint-at-3, not caps-at-3",
+        "router: Cycle row states a per-phase human checkpoint, not a hard cap",
         SKILLS / "cc10x-router" / "SKILL.md",
-        lambda text: "caps cycles at 3" not in text
-        and "pauses the loop for a human checkpoint before a 4th remediation cycle is created" in text
-        and "cycles beyond 3 run only on explicit user go-ahead" in text,
-        "matches what remediation-and-research.md and §14 enforce: count >= 3 -> human checkpoint before a 4th cycle, not a hard stop",
+        lambda text: "caps cycles at 3" not in text and pinned_line(text, ROUTER_CYCLE_ROW),
+        "matches the single circuit-breaker definition in remediation-and-research.md: a human checkpoint, not a hard stop",
     ),
     # --- Design-cluster contradiction fixes (ticket #81) ---
     # 81.1 — architecture: two-adapter gloss matches canonical ports-only formulation, both occurrences
@@ -2882,13 +2931,13 @@ ASSERTIONS = [
         "remediation: circuit breaker defined once, other phrasings are pointers",
         SKILLS / "cc10x-router" / "references" / "remediation-and-research.md",
         lambda text: text.count("\n### Circuit breaker\n") == 1
-        and re.search(r"- If count >= 3, ask the user how to proceed BEFORE creating a 4th remediation cycle\.", text) is not None
-        and len(re.findall(r">= ?3", text)) == 1
+        and pinned_line(text, BREAKER_ASK)
+        and len(re.findall(r">= ?3", text)) == 0
         and "`>= 3` circuit breaker above" not in text
         and "count >= 3 circuit-breaker gate" not in text
         and "(count `>= 3` -> ask the user)" not in text
         and "Apply the circuit breaker above" not in text,
-        "one definition of the 3-cycle limit; the fan-out, loop and consolidation texts point at it",
+        "one definition of the limit; the fan-out, loop and consolidation texts point at it",
     ),
     A(
         "remediation: the circuit breaker is a router rule and the remediation_history append is mandatory",
@@ -2896,8 +2945,8 @@ ASSERTIONS = [
         contains_all(
             "**Remediation history (MANDATORY — do not skip):**",
             "The circuit breaker above is a router rule, and the router is the only counter",
-            "The breaker count reads `remediation_history` and artifact-only resume reads the `remediation_created` event",
-            "without Task tools there are no REM-FIX tasks to cross-check, so a missed append lowers the count",
+            "The entry's `phase` is the REM-FIX's `phase:` value (for example `build-review` or `build-finish`); in a workflow with non-empty `normalized_phases` the entry also carries `phase_id`, the `phase_cursor` value.",
+            "The breaker count reads both `remediation_history` and the `remediation_created` events, and artifact-only resume reads the event, so skip neither append.",
         ),
         "the router counts the entries and asks the user; the breaker reads remediation_history and artifact-only resume reads remediation_created",
     ),
@@ -3081,8 +3130,8 @@ ASSERTIONS = [
     A(
         "qa-workflow: the remediation_history append is the counter the circuit breaker reads",
         ROUTER_REFS / "qa-workflow.md",
-        lambda text: text.count("3-cycle circuit breaker counts those entries") == 1
-        and text.count("artifact-only resume reads the `remediation_created`") == 1,
+        lambda text: all(pinned_line(text, line) for line in QA_BREAKER_LINES)
+        and "3-cycle circuit breaker" not in text,
         "the breaker is a router rule and the artifact entries are its count; consistent with remediation-and-research.md (B1/B9)",
     ),
     A(
@@ -3370,14 +3419,13 @@ ASSERTIONS = [
         "sections 4, 12 and 14 describe the same two modes",
     ),
     A(
-        "remediation: breaker counts remediation_history entries, asks BEFORE creating a 4th cycle, task count is a cross-check only",
+        "remediation: the breaker counts the cursor phase's rounds in history and events, the larger wins, build-finish rounds count on their own",
         SKILLS / "cc10x-router" / "references" / "remediation-and-research.md",
-        lambda text: re.search(r"- Count the entries in the workflow artifact's `remediation_history`[^\n]{0,200}authoritative without Task tools[^\n]{0,200}BOTH modes", text) is not None
-        and re.search(r"- If count >= 3, ask the user how to proceed BEFORE creating a 4th remediation cycle", text) is not None
-        and re.search(r"[Oo]nly when Task tools exist[^\n]{0,200}mismatch[^\n]{0,120}LARGER of the two counts", text) is not None
+        lambda text: all(pinned_line(text, line) for line in (BREAKER_COUNT, BREAKER_FINISH, BREAKER_HISTORY))
         and "- Count tasks whose descriptions contain both" not in text
-        and len(re.findall(r"count >= 3", text)) == 1,
-        "the single breaker is evaluable without Task tools; one definition, asked before the 4th cycle exists",
+        and "count >= 3" not in text
+        and "Only when Task tools exist" not in text,
+        "the per-phase breaker is evaluable without Task tools from the artifact and the events log",
     ),
     A(
         "remediation: each remediation round appends one remediation_history entry in both modes",
@@ -3386,10 +3434,9 @@ ASSERTIONS = [
         "the append rule does not need a REM-FIX task to exist",
     ),
     A(
-        "router: Cycle row and hard rule say before a 4th cycle, matching the breaker",
+        "router: the hard rule points at the breaker without restating its count",
         SKILLS / "cc10x-router" / "SKILL.md",
-        lambda text: "pauses the loop for a human checkpoint before a 4th remediation cycle is created" in text
-        and re.search(r"Never let a remediation loop create a 4th cycle without a human checkpoint", text) is not None
+        lambda text: pinned_line(text, ROUTER_BREAKER_RULE)
         and "at the 3rd remediation cycle" not in text
         and "reach 3 cycles" not in text,
         "SKILL.md no longer restates the breaker at a different count than its single definition",
@@ -3719,6 +3766,12 @@ ASSERTIONS = [
         lambda text: re.search(r"`remediation_history` holds exactly one entry per remediation round \(see `### Circuit breaker`", text) is not None
         and "`status_history` and `remediation_history` are append-only summaries of major router decisions" not in text,
         "the schema note must agree with the breaker's count rule",
+    ),
+    A(
+        "policy: a remediation_created event's phase is the REM-FIX's phase: value",
+        POLICY_REF,
+        lambda text: pinned_line(text, POLICY_REMEDIATION_EVENT),
+        "the breaker tells build-finish rounds apart by the event's phase, so it must not be the task phase",
     ),
     A(
         "remediation: on a task-count mismatch the breaker uses the LARGER of the two counts and reports it",
@@ -4506,7 +4559,7 @@ ASSERTIONS = [
         and "whose extracted blocking set is empty" not in text
         and "before any REM-FIX scope is computed" not in text
         and "the router resolves `CRITICAL_ONLY` vs `ALL_ISSUES`" not in text
-        and len(re.findall(r">= ?3", text)) == 1,
+        and len(re.findall(r">= ?3", text)) == 0,
         "tighter loops P2 (D1-D3): HIGH must be extractable from every agent's real output, and a note without a severity must not fail closed",
     ),
     A(

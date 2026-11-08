@@ -236,21 +236,25 @@ export function deriveLoop(input: {
   const { artifact, events } = input
   const cursor = cursorOf(artifact)
   const warnings = [...input.warnings]
+  const phases = phasesOf(artifact, warnings)
+  // Per phase, like the circuit breaker (remediation-and-research.md): rounds at the cursor phase (every round when
+  // the workflow has no phases), build-finish rounds excluded, the larger of remediation_history and the log's
+  // remediation_created count, since a missed append on either side never lowers it.
+  const counted = (phase: unknown, phaseId: string) => phase !== 'build-finish' && (phases.length === 0 || phaseId === cursor)
+  const history = Array.isArray(artifact.remediation_history) ? artifact.remediation_history : []
   return {
     wf: workflowOf(artifact),
     path: input.path,
     type: str(artifact.workflow_type) ?? '',
     request: str(artifact.user_request) ?? '',
-    phases: phasesOf(artifact, warnings),
+    phases,
     cursor,
     rawCursor: str(artifact.phase_cursor),
     steps: deriveSteps(artifact, events, input.spawns, warnings),
     gate: str(artifact.pending_gate),
-    // Workflow-wide, like the circuit breaker (remediation-and-research.md): the larger of remediation_history
-    // and the log's remediation_created count, since a missed append on either side never lowers it.
     rounds: Math.max(
-      Array.isArray(artifact.remediation_history) ? artifact.remediation_history.length : 0,
-      events.filter(e => e.event === 'remediation_created').length,
+      history.filter(h => counted(obj(h).phase, phaseKey(obj(h).phase_id))).length,
+      events.filter(e => e.event === 'remediation_created' && counted(e.phase, e.phaseId)).length,
     ),
     events,
     otherLive: input.otherLive,
@@ -265,11 +269,11 @@ export function elapsed(ms: number): string {
   return m >= 60 ? Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') + 'm' : m + 'm' + s + 's'
 }
 
-// The circuit breaker's remediation round cap.
-export const BREAKER = 3
+// Display mirror of the circuit breaker's per-phase round cap (remediation-and-research.md).
+export const BREAKER = 2
 
-// The workflow-wide round count against the circuit breaker: 'N/3' up to it; past it the bare count,
-// since '8/3' reads like a cap the count can never pass.
+// The cursor phase's round count against the circuit breaker: 'N/2' up to it; past it the bare count,
+// since '8/2' reads like a cap the count can never pass.
 export const remediation = (rounds: number): string => (rounds > BREAKER ? String(rounds) : rounds + '/' + BREAKER)
 
 export function bandLine(state: LoopState, now: number): string {

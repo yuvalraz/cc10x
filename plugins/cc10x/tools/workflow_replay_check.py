@@ -1629,8 +1629,8 @@ def check_remfix_gate(fixture: dict[str, Any]) -> None:
     history = artifact["remediation_history"]
     cycles = [entry.get("cycle_number") for entry in history]
     require(
-        cycles == list(range(1, len(history) + 1)) and 1 <= len(history) <= 3,
-        f"{label}: remediation_history cycle_number must run 1..n with n <= 3, got {cycles}",
+        bool(history) and cycles == list(range(1, len(history) + 1)),
+        f"{label}: remediation_history cycle_number must run 1..n, got {cycles}",
     )
     require(
         fixture["expected"]["follow_up_tasks"] == ["re-review", "re-hunt", "re-verify"],
@@ -1734,6 +1734,25 @@ def runnable_steps_from_events(events: list[dict[str, Any]], phase_id: Any, grap
     )
 
 
+def phase_cap_action(case: dict[str, Any]) -> tuple[str, bool]:
+    """remediation-and-research.md `### Circuit breaker`: count the cursor phase's rounds (every round when the workflow has no phases) in history and in remediation_created events, build-finish rounds counted on their own; the larger wins; ask the user at 2 or more."""
+    finish = case.get("remfix_phase") == "build-finish"
+    cursor = normalized_phase_id(case["phase_cursor"])
+
+    def counted(phase: Any, phase_id: Any) -> bool:
+        if (phase == "build-finish") != finish:
+            return False
+        return finish or not case["phased"] or normalized_phase_id(phase_id) == cursor
+
+    from_events = sum(
+        counted(event.get("phase"), event_phase_id(event)) for event in case["events"] if event["event"] == "remediation_created"
+    )
+    history = case.get("history")
+    from_history = sum(counted(entry.get("phase"), entry.get("phase_id")) for entry in history or [])
+    action = "ask_user" if max(from_events, from_history) >= 2 else "create_remfix"
+    return action, history is not None and from_history != from_events
+
+
 def locate_resume(case: dict[str, Any]) -> dict[str, Any]:
     """SKILL.md section 4 step 6(a): drop terminal artifacts, resume on a uuid or request match, else look up non-terminal artifacts with a pending_gate."""
     live = [
@@ -1775,6 +1794,18 @@ def check_multi_phase_resume_events(fixture: dict[str, Any]) -> None:
         require(
             located == case["expected"],
             f"{label}: resume locator for '{case['name']}' is {located}, expected {case['expected']}",
+        )
+    require(bool(fixture.get("phase_cap_cases")), f"{label}: no phase_cap cases")
+    for case in fixture["phase_cap_cases"]:
+        action, mismatch = phase_cap_action(case)
+        require(
+            action == case["expected_action"],
+            f"{label}: phase cap for '{case['name']}' is {action}, expected {case['expected_action']}",
+        )
+        want = case.get("expected_mismatch", False)
+        require(
+            mismatch == want,
+            f"{label}: phase cap mismatch for '{case['name']}' is {mismatch}, expected {want}",
         )
 
 

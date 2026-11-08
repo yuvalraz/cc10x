@@ -375,9 +375,9 @@ TaskUpdate({ taskId: qa_rebuild_task_id, addBlockedBy: [qa_build_task_id] })
   `remediation_history` array in the shape `{ts, phase, reason, cycle_number}`, `cycle_number` being
   this workflow's running REM-FIX count starting at 1 — exactly what the *Circuit breaker* section of
   `remediation-and-research.md` mandates for **every** `kind:remfix` task, this one included. The
-  3-cycle circuit breaker counts those entries; artifact-only resume reads the `remediation_created`
-  event that the same step appends to the events log. Skip the append and the breaker counts zero
-  forever for the entire QA route, and the cap above is counted only in the conversation. The
+  circuit breaker counts those entries; artifact-only resume reads the `remediation_created`
+  event that the same step appends to the events log. Skip the append and the breaker reads the
+  events alone for the entire QA route, and the cap above is counted only in the conversation. The
   QA-local cap of 2 and the artifact's entry count are therefore **two independent counters that
   must agree**: the first bounds the loop, the second proves it was bounded, and where they
   disagree the artifact is authoritative.

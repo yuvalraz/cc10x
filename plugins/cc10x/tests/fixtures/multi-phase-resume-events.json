@@ -817,5 +817,120 @@
         "wf": "wf-20261007T150200Z-buildc3"
       }
     }
+  ],
+  "phase_cap_cases": [
+    {
+      "name": "(a) one round on the cursor phase creates the REM-FIX",
+      "phased": true,
+      "phase_cursor": "phase-2",
+      "events": [
+        {"event": "remediation_created", "phase": "build-review", "details": {"phase_id": "phase-2"}}
+      ],
+      "expected_action": "create_remfix"
+    },
+    {
+      "name": "(b) two rounds on the cursor phase ask the user",
+      "phased": true,
+      "phase_cursor": "phase-2",
+      "events": [
+        {"event": "remediation_created", "phase": "build-review", "details": {"phase_id": "phase-2"}},
+        {"event": "remediation_created", "phase": "build-review", "details": {"phase_id": "phase-2"}}
+      ],
+      "expected_action": "ask_user"
+    },
+    {
+      "name": "(c) a build-finish round counts toward no phase",
+      "phased": true,
+      "phase_cursor": "phase-2",
+      "events": [
+        {"event": "remediation_created", "phase": "build-review", "details": {"phase_id": "phase-2"}},
+        {"event": "remediation_created", "phase": "build-finish", "details": {"phase_id": "phase-2"}}
+      ],
+      "expected_action": "create_remfix"
+    },
+    {
+      "name": "(d) an earlier phase's rounds do not count for the cursor phase",
+      "phased": true,
+      "phase_cursor": "phase-2",
+      "events": [
+        {"event": "remediation_created", "phase": "build-review", "details": {"phase_id": "phase-1"}},
+        {"event": "remediation_created", "phase": "build-review", "details": {"phase_id": "phase-1"}}
+      ],
+      "expected_action": "create_remfix"
+    },
+    {
+      "name": "(e) one round on each of three phases stays under the cap",
+      "phased": true,
+      "phase_cursor": "phase-3",
+      "events": [
+        {"event": "remediation_created", "phase": "build-review", "details": {"phase_id": "phase-1"}},
+        {"event": "remediation_created", "phase": "build-review", "details": {"phase_id": "phase-2"}},
+        {"event": "remediation_created", "phase": "build-review", "details": {"phase_id": "phase-3"}}
+      ],
+      "expected_action": "create_remfix"
+    },
+    {
+      "name": "(f) two build-finish rounds ask before the next build-finish REM-FIX",
+      "phased": true,
+      "phase_cursor": "phase-3",
+      "remfix_phase": "build-finish",
+      "events": [
+        {"event": "remediation_created", "phase": "build-finish", "details": {"phase_id": "phase-3"}},
+        {"event": "remediation_created", "phase": "build-finish", "details": {"phase_id": "phase-3"}}
+      ],
+      "expected_action": "ask_user"
+    },
+    {
+      "name": "(g) a missed event append: history counts two, the larger wins and the mismatch is reported",
+      "phased": true,
+      "phase_cursor": "phase-2",
+      "events": [
+        {"event": "remediation_created", "phase": "build-review", "details": {"phase_id": "phase-2"}}
+      ],
+      "history": [
+        {"phase": "build-review", "phase_id": "phase-2"},
+        {"phase": "build-review", "phase_id": "phase-2"}
+      ],
+      "expected_action": "ask_user",
+      "expected_mismatch": true
+    },
+    {
+      "name": "(h) QA is one phase: rounds under different cursors and history without phase_id give one count",
+      "phased": false,
+      "phase_cursor": "qa-build",
+      "events": [
+        {"event": "remediation_created", "phase": "qa-build", "details": {"phase_id": "qa-build"}},
+        {"event": "remediation_created", "phase": "qa-review", "details": {"phase_id": "N/A"}}
+      ],
+      "history": [
+        {"phase": "qa-build"},
+        {"phase": "qa-review"}
+      ],
+      "expected_action": "ask_user"
+    },
+    {
+      "name": "(i) a no-plan BUILD compares N/A and missing phase ids as one phase",
+      "phased": false,
+      "phase_cursor": null,
+      "events": [
+        {"event": "remediation_created", "phase": "build-review", "details": {"phase_id": "N/A"}}
+      ],
+      "history": [
+        {"phase": "build-review"}
+      ],
+      "expected_action": "create_remfix"
+    },
+    {
+      "name": "(j) a no-plan BUILD excludes build-finish rounds from the phase count",
+      "phased": false,
+      "phase_cursor": null,
+      "remfix_phase": "build-review",
+      "events": [
+        {"event": "remediation_created", "phase": "build-review", "details": {"phase_id": "N/A"}},
+        {"event": "remediation_created", "phase": "build-finish", "details": {"phase_id": "N/A"}},
+        {"event": "remediation_created", "phase": "build-finish", "details": {"phase_id": "N/A"}}
+      ],
+      "expected_action": "create_remfix"
+    }
   ]
 }

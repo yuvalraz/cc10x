@@ -1997,7 +1997,7 @@ PP25_CAP = re.compile(r"\*\*Cap: (\d+) ")
 # HEAD *and* green against the defect. The real defect is one level down:
 # `remediation-and-research.md`'s Circuit-breaker section makes appending
 # `{ts, phase, reason, cycle_number}` MANDATORY on every `kind:remfix` creation,
-# and the 3-cycle breaker counts those entries in the artifact -- while `qa-workflow.md` creates a `kind:remfix` task
+# and the circuit breaker counts those entries in the artifact -- while `qa-workflow.md` creates a `kind:remfix` task
 # (`re-qa-build`) and contained the token `remediation_history` ZERO times. So
 # the count stayed 0 for every QA workflow, the breaker could never fire, and
 # QA's "cap: 2 extra rounds" was LLM-counted: the precise condition that

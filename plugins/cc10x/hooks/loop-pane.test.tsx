@@ -568,7 +568,7 @@ const texts = async ($: Kit, surface: Surface = 'terminal') => (await pane($, su
 const SURFACES = ['terminal', 'desktop', 'vscode'] as const
 const REM_WF = 'wf-20261018T112922Z-7e99ef54'
 
-test('pane 1. BUILD_REMEDIATION: header, cursor, phases, the FIXED builder, re-review pending, remediation 1/3', async ($, on) => {
+test('pane 1. BUILD_REMEDIATION: header, cursor, phases, the FIXED builder, re-review pending, remediation 1/2', async ($, on) => {
   engine(on)
   answerFs(on, BUILD_REMEDIATION)
   await start($)
@@ -581,7 +581,7 @@ test('pane 1. BUILD_REMEDIATION: header, cursor, phases, the FIXED builder, re-r
     expect(lines).toContain('P1 ▶ P2 · P3 · P4 · P5 · P6 · P7 ·')
     expect(lines.some(l => /^✓ component-builder +FIXED 11:51/.test(l))).toBe(true)
     expect(lines.some(l => /^· code-reviewer.*re-review/.test(l))).toBe(true)
-    expect(lines).toContain('remediation 1/3 · gate: none')
+    expect(lines).toContain('remediation 1/2 · gate: none')
   }
 })
 
@@ -595,7 +595,7 @@ test('pane 1b. BUILD_MID_PHASE on every surface: P1 ✓ P2 ✓ P3 ▶, a spawned
     const lines = await texts($, surface)
     expect(lines).toContain('P1 ✓ P2 ✓ P3 ▶ P4 · P5 · P6 · P7 ·')
     expect(lines.some(l => /^▶ code-reviewer running 0m00s/.test(l))).toBe(true)
-    expect(lines).toContain('remediation 3/3 · gate: none')
+    expect(lines).toContain('remediation 0/2 · gate: none')
   }
 })
 
@@ -833,13 +833,13 @@ test('carried 2. the error is a dim pane line; the band keeps only the stale mar
   expect(b).not.toMatch(/EACCES/)
 })
 
-test('carried 3. past the breaker: pane remediation 5 (breaker 3), band rem 5', async ($, on) => {
+test('carried 3. past the breaker: pane remediation 5 (breaker 2), band rem 5', async ($, on) => {
   engine(on)
   const fix = JSON.stringify({ ts: '2026-10-18T11:52:00Z', wf: REM_WF, event: 'remediation_created', phase: 'build-implement', agent: 'router', decision: 'remfix', details: { phase_id: 'P1' } }) + '\n'
   answerFs(on, { ...BUILD_REMEDIATION, eventsText: BUILD_REMEDIATION.eventsText + fix.repeat(4) })
   await start($)
 
-  expect(await texts($)).toContain('remediation 5 (breaker 3) · gate: none')
+  expect(await texts($)).toContain('remediation 5 (breaker 2) · gate: none')
   expect(await band($)).toMatch(/ · rem 5$/)
 })
 
