@@ -16,7 +16,7 @@ import {
   type LoopFixture,
 } from './loop-fixtures'
 import { REMEDIATION, ROUTES } from './loop-routes'
-import { bandLine, deriveLoop, deriveSteps, insideRoot, isFinished, nextStep, parseEvents, workflowDirs, type Artifact } from './loop-state'
+import { bandLine, deriveLedger, deriveLoop, deriveSteps, insideRoot, isFinished, nextStep, parseEvents, workflowDirs, type Artifact } from './loop-state'
 
 // 2026-10-18T12:51:24Z, the second the case-2 APPROVE record carries.
 const NOW = 1_792_327_884_000
@@ -698,4 +698,147 @@ test('42. per phase: at cursor P2 only P2 rounds count, and build-finish rounds 
   expect(rounds([...history, { phase: 'build-finish', phase_id: 'P2' }], events)).toBe(2) // a missed log record
   // the newest history entry is build-finish while the log missed it: still the final-review wave
   expect(rounds([...history, { phase: 'build-finish', phase_id: 'P2' }], events.slice(0, 2))).toBe(2)
+})
+
+const ledgerOf = (fixture: LoopFixture, spawns: Spawn[] = [], patch?: (artifact: Artifact) => void) => {
+  const { artifact, events } = load(fixture, patch)
+  return deriveLedger(artifact, events, spawns)
+}
+const WF_ID = 'wf-20261018T112922Z-7e99ef54'
+const brew = (steps: { kind: string; agent: string; taskPhase: string; decision: string | null }[]) =>
+  steps.map(s => [s.kind, s.agent, s.taskPhase, s.decision].filter(x => x !== '' && x !== null).join(' '))
+
+test('ledger 1. FINISHED_BUILD: seven rows P1-P7 in plan order, all completed, fixes 3/0/3/4/4/3/0, P7 is the cursor row with build-finish COMMITTED then DONE and no running row', () => {
+  const ledger = ledgerOf(FINISHED_BUILD)
+
+  expect(ledger.map(p => p.id)).toEqual(['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7'])
+  expect(ledger.map(p => p.status)).toEqual(Array(7).fill('completed'))
+  expect(ledger.map(p => p.rounds)).toEqual([3, 0, 3, 4, 4, 3, 0])
+  expect(ledger.map(p => p.isCursor)).toEqual([false, false, false, false, false, false, true])
+  expect(ledger[6].steps).toEqual([
+    { kind: 'run', agent: 'router', taskPhase: 'build-finish', decision: 'COMMITTED', at: '2026-10-19T07:09:40Z', startedAt: null },
+    { kind: 'run', agent: 'router', taskPhase: 'build-finish', decision: 'DONE', at: '2026-10-19T07:15:36Z', startedAt: null },
+  ])
+})
+
+test('ledger 2. BUILD_REMEDIATION: P1 running holds builder PASS, reviewer CHANGES_REQUESTED, hunter CLEAN, a remfix, builder FIXED, in event order; P2-P7 pending and empty', () => {
+  const ledger = ledgerOf(BUILD_REMEDIATION)
+
+  expect(ledger[0]).toMatchObject({ id: 'P1', status: 'running', rounds: 1, isCursor: true })
+  expect(brew(ledger[0].steps)).toEqual([
+    'run component-builder build-implement PASS',
+    'run code-reviewer build-review CHANGES_REQUESTED',
+    'run failure-hunter build-hunt CLEAN',
+    'remfix router build-implement remfix',
+    'run component-builder build-implement FIXED',
+  ])
+  expect(ledger[0].steps[3]).toEqual({ kind: 'remfix', agent: 'router', taskPhase: 'build-implement', decision: 'remfix', at: '2026-10-18T11:45:46Z', startedAt: null })
+  expect(ledger.slice(1).map(p => [p.id, p.status, p.steps.length, p.rounds, p.isCursor])).toEqual(
+    ['P2', 'P3', 'P4', 'P5', 'P6', 'P7'].map(id => [id, 'pending', 0, 0, false]),
+  )
+})
+
+test('ledger 3. parallel reviewer and hunter spawns at cursor P3 are two running rows after builder PASS, each with its agentId and startedAt', () => {
+  const { events } = load(BUILD_MID_PHASE)
+  const at = { atIndex: events.length, phaseId: 'P3', wf: WF_ID }
+  const ledger = ledgerOf(BUILD_MID_PHASE, [
+    { ...at, agent: 'code-reviewer', startedAt: NOW, agentId: 'a-rev' },
+    { ...at, agent: 'failure-hunter', startedAt: NOW + 1000, agentId: 'a-hunt' },
+  ])
+
+  expect(ledger[2].steps).toEqual([
+    { kind: 'run', agent: 'component-builder', taskPhase: 'build-implement', decision: 'PASS', at: '2026-10-18T12:51:24Z', startedAt: null },
+    { kind: 'running', agent: 'code-reviewer', taskPhase: '', decision: null, at: null, startedAt: NOW, agentId: 'a-rev' },
+    { kind: 'running', agent: 'failure-hunter', taskPhase: '', decision: null, at: null, startedAt: NOW + 1000, agentId: 'a-hunt' },
+  ])
+})
+
+test('ledger 4. two builder spawns bind in order: the PASS at index 2 takes the atIndex-2 spawn, the FIXED at index 6 takes the atIndex-6 spawn; another workflow\'s builder spawn never binds; reviewer and hunter rows have no agentId', () => {
+  const builder = { agent: 'component-builder', startedAt: NOW, phaseId: 'P1', wf: WF_ID }
+  const ledger = ledgerOf(BUILD_REMEDIATION, [
+    { ...builder, atIndex: 2, agentId: 'b0' },
+    { ...builder, atIndex: 2, agentId: 'b1' }, // a tie on atIndex: the later in the list binds
+    { ...builder, atIndex: 6, agentId: 'b2' },
+    { ...builder, atIndex: 6, agentId: 'x', wf: 'wf-other' },
+  ])
+
+  expect(ledger[0].steps.map(s => s.agentId)).toEqual(['b1', undefined, undefined, undefined, 'b2'])
+})
+
+test('ledger 5. no plan phases: BUILD_TRIVIAL_MID is one BUILD row and PLAN_AT_GAP1 one PLAN row, each the cursor row holding every result', () => {
+  const trivial = ledgerOf(BUILD_TRIVIAL_MID)
+  expect(trivial.map(p => [p.id, p.status, p.isCursor, p.rounds])).toEqual([['BUILD', 'running', true, 0]])
+  expect(brew(trivial[0].steps)).toEqual(['run component-builder build-implement PASS'])
+
+  const plan = ledgerOf(PLAN_AT_GAP1)
+  expect(plan.map(p => [p.id, p.status, p.isCursor])).toEqual([['PLAN', 'running', true]])
+  expect(brew(plan[0].steps)).toEqual(['run exploration plan DESIGN_SAVED', 'run planner plan-create NEEDS_CLARIFICATION'])
+
+  // A route row with no workflow_type is 'workflow'; a finished route row reads completed.
+  expect(ledgerOf(PLAN_AT_GAP1, [], a => delete a.workflow_type)[0].id).toBe('workflow')
+  const { artifact, events } = load(PLAN_AT_GAP1)
+  const done = deriveLedger(artifact, [...events, { ...events[0], ts: '2026-10-21T00:00:00Z', event: 'workflow_completed' }], [])
+  expect(done[0].status).toBe('completed')
+})
+
+test('ledger 6. a result with phase_id P9 and one with no details land in cursor row P3 (BUILD_MID_PHASE), last in order; with phase_cursor null they land in P1', () => {
+  const odd = parseEvents(
+    JSON.stringify({ ts: 't9', event: 'result_persisted', agent: 'code-reviewer', phase: 'build-review', decision: 'APPROVE', details: { phase_id: 'P9' } }) +
+      '\n' +
+      JSON.stringify({ ts: 't10', event: 'result_persisted', agent: 'failure-hunter', phase: 'build-hunt', decision: 'CLEAN' }) +
+      '\n',
+  )
+  const { artifact, events } = load(BUILD_MID_PHASE)
+  const ledger = deriveLedger(artifact, [...events, ...odd], [])
+  expect(brew(ledger[2].steps)).toEqual([
+    'run component-builder build-implement PASS',
+    'run code-reviewer build-review APPROVE',
+    'run failure-hunter build-hunt CLEAN',
+  ])
+
+  const nulled = deriveLedger({ ...artifact, phase_cursor: null }, [...events, ...odd], [])
+  expect(nulled.map(p => p.isCursor)).toEqual([true, false, false, false, false, false, false])
+  expect(brew(nulled[0].steps.slice(-2))).toEqual(['run code-reviewer build-review APPROVE', 'run failure-hunter build-hunt CLEAN'])
+  expect(brew(nulled[2].steps)).toEqual(['run component-builder build-implement PASS'])
+})
+
+test('ledger 7. a spawn record without agentId binds but leaves the step without one; a finished workflow shows no running row even with an unresulted spawn', () => {
+  const builder = { agent: 'component-builder', startedAt: NOW, phaseId: 'P3', wf: WF_ID }
+  const ledger = ledgerOf(BUILD_MID_PHASE, [{ ...builder, atIndex: 23, agentId: 'older' }, { ...builder, atIndex: 24 }])
+  expect(ledger[2].steps).toHaveLength(1)
+  expect(ledger[2].steps[0].agentId).toBeUndefined()
+
+  const { events } = load(FINISHED_BUILD)
+  const finished = ledgerOf(FINISHED_BUILD, [{ agent: 'code-reviewer', atIndex: events.length, startedAt: NOW, phaseId: 'P7', wf: WF_ID, agentId: 'r' }])
+  expect(finished[6].steps.map(s => s.kind)).toEqual(['run', 'run'])
+})
+
+test('ledger 8. phase_status in_progress reads running, partial and blocked pass through, a phase missing from phase_status reads pending', () => {
+  const ledger = ledgerOf(BUILD_MID_PHASE, [], a => {
+    a.phase_status = { P1: 'partial', P2: 'blocked', P3: 'in_progress', P5: 'completed' }
+  })
+  expect(ledger.map(p => p.status)).toEqual(['partial', 'blocked', 'running', 'pending', 'completed', 'pending', 'pending'])
+})
+
+test('ledger 9. deriveLoop carries ledger equal to deriveLedger on the same inputs', () => {
+  const { artifact, events } = load(BUILD_MID_PHASE)
+  const spawns: Spawn[] = [{ agent: 'code-reviewer', atIndex: events.length, startedAt: NOW, phaseId: 'P3', wf: WF_ID, agentId: 'a-rev' }]
+  const ledger = loop(BUILD_MID_PHASE, spawns).ledger
+
+  expect(ledger).toEqual(deriveLedger(artifact, events, spawns))
+  expect(ledger[2].steps.at(-1)?.kind).toBe('running')
+})
+
+test('ledger 10. an empty events array (log not written yet) yields every BUILD_MID_PHASE row with no steps and 0 fixes, no throw', () => {
+  const { artifact } = load(BUILD_MID_PHASE)
+  const ledger = deriveLedger(artifact, [], [])
+  expect(ledger.map(p => [p.id, p.steps.length, p.rounds])).toEqual(['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7'].map(id => [id, 0, 0]))
+})
+
+test('ledger 11. a normalized_phases entry with no id is skipped and entries sharing an id merge into one row, so phase keys stay unique', () => {
+  const ledger = ledgerOf(BUILD_REMEDIATION, [], a => {
+    a.normalized_phases = ['P1', {}, { id: 'P2' }, { phase_id: 'P1' }]
+  })
+  expect(ledger.map(p => p.id)).toEqual(['P1', 'P2'])
+  expect(ledger[0].steps).toHaveLength(5)
 })

@@ -122,11 +122,11 @@ function watchState(on: On, failOpened = false) {
 // The rest of the engine: every other call the hooks make, answered plainly.
 // `refuse` names engine calls that answer `{ deny }` instead.
 // 'agent.spawn!' makes the core spawn itself throw; 'ui.open' refuses every pane; 'opened' refuses every write of
-// the `opened` atom. `opens` collects every pane id `ui.open` was asked for.
+// the `opened` atom; 'agentId' makes the core spawn answer with no agentId. `opens` collects every pane id `ui.open` was asked for.
 function engine(
   on: On,
   logs: string[] = [],
-  refuse: ('command.register' | 'agent.spawn' | 'agent.spawn!' | 'ui.open' | 'opened')[] = [],
+  refuse: ('command.register' | 'agent.spawn' | 'agent.spawn!' | 'ui.open' | 'opened' | 'agentId')[] = [],
   opens: string[] = [],
 ) {
   on('command.register', () => (refuse.includes('command.register') ? { deny: 'refused' } : { value: { command: 'cc10x-loop' } }))
@@ -138,6 +138,7 @@ function engine(
   on('tool.call', () => ({ result: {} }))
   on('agent.spawn', () => {
     if (refuse.includes('agent.spawn!')) throw new Error('core spawn down')
+    if (refuse.includes('agentId')) return { model: 'test' }
     return refuse.includes('agent.spawn') ? { deny: 'another plugin refused' } : { model: 'test', agentId: 'agent-1' }
   })
   on('turn.complete', (_, e) => ({ text: e.answer }))
@@ -249,7 +250,7 @@ test('band 2/3/7. a reviewer spawn runs; the APPROVE line after it moves next on
 
   expect(await band($)).toMatch(/code-reviewer running 0m00s/)
   expect(state.spawns).toEqual([
-    { agent: 'code-reviewer', atIndex: parseEvents(BUILD_MID_PHASE.eventsText).length, startedAt: NOW, phaseId: 'P3', wf: WF },
+    { agent: 'code-reviewer', atIndex: parseEvents(BUILD_MID_PHASE.eventsText).length, startedAt: NOW, phaseId: 'P3', wf: WF, agentId: 'agent-1' },
   ])
 
   // The router appends the reviewer's result with a Bash call; that call refreshes the loop.
@@ -282,7 +283,38 @@ test('band spawn. a spawn outside any chain or before a live workflow never bind
   await $.agent.spawn(reviewer)
   await $.agent.spawn({ prompt: 'x', subagentType: 'general-purpose' })
 
-  expect(state.spawns).toEqual([{ agent: 'code-reviewer', atIndex: 0, startedAt: NOW, phaseId: 'N/A', wf: '' }])
+  expect(state.spawns).toEqual([{ agent: 'code-reviewer', atIndex: 0, startedAt: NOW, phaseId: 'N/A', wf: '', agentId: 'agent-1' }])
+})
+
+test('ledger spawn. a core spawn result with no agentId records no agentId key', async ($, on) => {
+  const state = engine(on, [], ['agentId'])
+  answerFs(on, BUILD_MID_PHASE)
+  await start($)
+  await $.agent.spawn(reviewer)
+
+  expect(state.spawns).toHaveLength(1)
+  expect('agentId' in state.spawns![0]).toBe(false)
+})
+
+test('ledger resume. a resumed agent is not recorded again: its first spawn record already holds the agentId', async ($, on) => {
+  const state = engine(on)
+  answerFs(on, BUILD_MID_PHASE)
+  await start($)
+  await $.agent.spawn(reviewer)
+  await $.agent.spawn({ ...reviewer, resume: { agentId: 'agent-1' } })
+
+  expect(state.spawns?.map(s => s.agentId)).toEqual(['agent-1'])
+})
+
+test('ledger last. a finished workflow\'s view.last carries type BUILD and its seven-row ledger', async ($, on) => {
+  const state = engine(on)
+  answerFs(on, FINISHED_BUILD)
+  await start($)
+
+  const last = state.loop?.last
+  expect(last?.type).toBe('BUILD')
+  expect(last?.ledger.map(p => p.id)).toEqual(['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7'])
+  expect(last?.ledger[6].steps.map(s => s.decision)).toEqual(['COMMITTED', 'DONE'])
 })
 
 test('band wf. a spawn recorded against workflow A does not run a row of workflow B', async ($, on) => {

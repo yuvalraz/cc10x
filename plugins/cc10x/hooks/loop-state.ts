@@ -1,7 +1,7 @@
 // Pure loop state: artifact + events log + spawn records -> LoopState. No engine calls here.
 // Mirrors the router's step rule (SKILL.md section 4 step 6c) and the hooklib finished rule as the
 // data on disk has them: every position is an index into the parsed events array, never a timestamp.
-import type { LoopEvent, LoopState, Spawn, Step } from '../types'
+import type { LedgerPhase, LoopEvent, LoopState, Spawn, Step } from '../types'
 import { REMEDIATION, ROUTES, type Route } from './loop-routes'
 
 export type Artifact = Record<string, unknown>
@@ -148,6 +148,13 @@ function chainOf(artifact: Artifact, remediation: boolean, warnings: string[]): 
   return chain ?? []
 }
 
+// A spawn still running: at the cursor phase, after the boundary, and no result of its agent at or after it.
+// No workflow check here: each caller filters `wf` itself.
+const spawnLive = (s: Spawn, events: LoopEvent[], cursor: string, boundary: number): boolean =>
+  s.phaseId === cursor &&
+  s.atIndex > boundary &&
+  !events.some((e, i) => i >= s.atIndex && e.event === 'result_persisted' && e.agent === s.agent)
+
 export function deriveSteps(artifact: Artifact, events: LoopEvent[], spawns: Spawn[], warnings: string[] = []): Step[] {
   const cursor = cursorOf(artifact)
   const boundary = boundaryOf(events, cursor)
@@ -174,13 +181,7 @@ export function deriveSteps(artifact: Artifact, events: LoopEvent[], spawns: Spa
   // an unknown workflow ('') never binds on either side.
   const wf = workflowOf(artifact)
   for (const agent of new Set(chain.map(row => row.agent))) {
-    const live = spawns.filter(
-      s =>
-        s.agent === agent &&
-        s.phaseId === cursor &&
-        s.atIndex > boundary &&
-        !events.some((e, i) => i >= s.atIndex && e.event === 'result_persisted' && e.agent === s.agent),
-    )
+    const live = spawns.filter(s => s.agent === agent && spawnLive(s, events, cursor, boundary))
     // Another workflow's spawn is a correct non-match; only a spawn of no known workflow is an anomaly.
     for (const s of live) {
       if (s.wf === '') {
@@ -210,6 +211,74 @@ export function deriveSteps(artifact: Artifact, events: LoopEvent[], spawns: Spa
     })
   }
   return [...steps, ...extras.values()]
+}
+
+// The ledger: one row per plan phase (or one route row), each holding its results and REM-FIX markers in event
+// order, plus the cursor row's live spawns. A result binds the latest earlier unbound spawn of its agent, phase and workflow.
+export function deriveLedger(artifact: Artifact, events: LoopEvent[], spawns: Spawn[]): LedgerPhase[] {
+  const finished = isFinished(artifact, events)
+  const rows: LedgerPhase[] = []
+  for (const p of phasesOf(artifact)) {
+    // An entry with no id is skipped and a repeated id is one row, so row ids stay unique.
+    if (p.id === '' || rows.some(r => r.id === p.id)) continue
+    rows.push({ id: p.id, status: p.status === 'in_progress' ? 'running' : p.status, rounds: 0, isCursor: false, steps: [] })
+  }
+  if (rows.length === 0) {
+    rows.push({ id: str(artifact.workflow_type) || 'workflow', status: finished ? 'completed' : 'running', rounds: 0, isCursor: false, steps: [] })
+  }
+  const cursor = cursorOf(artifact)
+  const home = rows.find(r => r.id === cursor) ?? rows[0]
+  home.isCursor = true
+  const rowOf = (phaseId: string) => rows.find(r => r.id === phaseId) ?? home
+
+  const wf = workflowOf(artifact)
+  const bound = new Set<Spawn>()
+  events.forEach((e, i) => {
+    if (e.event === 'remediation_created') {
+      const row = rowOf(e.phaseId)
+      row.rounds += 1
+      row.steps.push({ kind: 'remfix', agent: e.agent, taskPhase: e.phase, decision: e.decision, at: e.ts, startedAt: null })
+      return
+    }
+    if (e.event !== 'result_persisted') return
+    let spawn: Spawn | undefined
+    for (const s of spawns) {
+      const fits = wf !== '' && s.wf === wf && s.agent === e.agent && s.phaseId === e.phaseId && s.atIndex <= i && !bound.has(s)
+      if (fits && (spawn === undefined || s.atIndex >= spawn.atIndex)) spawn = s
+    }
+    if (spawn !== undefined) bound.add(spawn)
+    rowOf(e.phaseId).steps.push({
+      kind: 'run',
+      agent: e.agent,
+      taskPhase: e.phase,
+      decision: e.decision,
+      at: e.ts,
+      startedAt: null,
+      ...(spawn?.agentId !== undefined ? { agentId: spawn.agentId } : {}),
+    })
+  })
+
+  if (!finished) {
+    const boundary = boundaryOf(events, cursor)
+    const latest = new Map<string, Spawn>()
+    const live = spawns.filter(s => spawnLive(s, events, cursor, boundary) && s.wf !== '' && s.wf === wf)
+    for (const s of live.sort((a, b) => a.atIndex - b.atIndex)) {
+      latest.delete(s.agent)
+      latest.set(s.agent, s)
+    }
+    for (const s of latest.values()) {
+      home.steps.push({
+        kind: 'running',
+        agent: s.agent,
+        taskPhase: '',
+        decision: null,
+        at: null,
+        startedAt: s.startedAt,
+        ...(s.agentId !== undefined ? { agentId: s.agentId } : {}),
+      })
+    }
+  }
+  return rows
 }
 
 // The next step: the first pending row after the last done or running chain row (extra rows never
@@ -264,6 +333,7 @@ export function deriveLoop(input: {
     events,
     otherLive: input.otherLive,
     warnings,
+    ledger: deriveLedger(artifact, events, input.spawns),
   }
 }
 

@@ -3,7 +3,7 @@ import type { CoreEngineInterface, Register } from 'claude-code'
 
 import type { LoopState, LoopView, Spawn, Step } from '../types'
 import { REMEDIATION, ROUTES } from './loop-routes'
-import { BREAKER, WORKFLOWS, bandLine, deriveLoop, elapsed, insideRoot, isFinished, parseEvents, remediation, workflowDirs, workflowOf, type Artifact } from './loop-state'
+import { BREAKER, WORKFLOWS, bandLine, deriveLedger, deriveLoop, elapsed, insideRoot, isFinished, parseEvents, remediation, workflowDirs, workflowOf, type Artifact } from './loop-state'
 
 const PANE = 'cc10x-loop'
 const EMPTY: LoopView = { live: null, last: null, error: null }
@@ -51,7 +51,13 @@ async function scanDir($: Api, dir: string, previous: LoopView, recorded: Spawn[
       reading = 'events log unreadable'
       const events = names.has(log) ? parseEvents(await $.fs.read(dir + '/' + log)) : []
       if (isFinished(artifact, events)) {
-        last ??= { wf: workflowOf(artifact), finishedAt: events[events.length - 1]?.ts ?? '', path }
+        last ??= {
+          wf: workflowOf(artifact),
+          finishedAt: events[events.length - 1]?.ts ?? '',
+          path,
+          type: typeof artifact.workflow_type === 'string' ? artifact.workflow_type : '',
+          ledger: deriveLedger(artifact, events, recorded),
+        }
         continue
       }
       // shortcut: otherLive stays 0 because the scan stops at the first live workflow; count the rest if the pane needs it.
@@ -217,10 +223,11 @@ export const register: Register = on => {
   })
 
   // Records a started cc10x chain agent against the live workflow as it stands now, then re-reads so the row runs.
+  // A resumed agent is not recorded again: its first record already holds the agentId.
   on('agent.spawn', async ($, e, next) => {
     const started = await next(e)
     const agent = SPAWNED.exec(e.subagentType)?.[1]
-    if (started.deny === undefined && agent !== undefined && AGENTS.has(agent)) {
+    if (started.deny === undefined && e.resume === undefined && agent !== undefined && AGENTS.has(agent)) {
       // A router write the tool.call filter missed may have moved the boundary: read before recording,
       // and record from this read even when a parallel spawn's newer read superseded its write.
       const { live } = (await readLoop($)).view
@@ -230,8 +237,9 @@ export const register: Register = on => {
         startedAt: await $.clock.now(),
         phaseId: live?.cursor ?? 'N/A',
         wf: live?.wf ?? '',
+        ...(typeof started.agentId === 'string' ? { agentId: started.agentId } : {}),
       }
-      await update($, spawns, list => [...list, spawn].slice(-50))
+      await update($, spawns, list => [...list, spawn].slice(-200))
       await readLoop($)
     }
 
