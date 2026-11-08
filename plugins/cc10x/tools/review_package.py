@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-"""Generate a review package: commit list (BASE..HEAD), stat summary, and the net
-diff with extended context, written to one file the reviewer reads in a single
-call. When HEAD is the checked-out HEAD, the diff is BASE against the working
-tree (committed plus uncommitted tracked changes) and the untracked files outside
-.cc10x/ are listed; exit 2 when BASE is bad or there is nothing to review.
-The diff never has to be pasted through the router's context. cc10x's analog of
+"""Generate a review package: commit list, stat summary, and the net diff with
+extended context, written to one file the reviewer reads in a single call, so
+the diff never has to be pasted through the router's context. cc10x's analog of
 superpowers' review-package.
 
 Usage: review_package.py BASE [HEAD]
@@ -115,44 +112,25 @@ def main() -> int:
         print(f"bad HEAD: {args.head}", file=sys.stderr)
         return 2
 
-    rng = f"{base_sha}..{head_sha}"
-    # At the current HEAD, diff BASE against the working tree so uncommitted work is reviewed too.
-    worktree = head_sha == resolve("HEAD")
-    target = base_sha if worktree else rng
-    commits_text = git("log", "--oneline", rng)
-    diff_text = git("diff", "-U10", target)
-    untracked = (
-        [
-            p
-            for p in git("ls-files", "--others", "--exclude-standard").splitlines()
-            if p and not p.startswith(".cc10x/")
-        ]
-        if worktree
-        else []
-    )
-    if not commits_text and not diff_text and not untracked:
+    if base_sha == head_sha:
         print(
-            f"nothing to review: no commits, changes or untracked files since BASE ({base_sha[:7]}). "
-            "BASE must predate the phase's work.",
+            f"BASE and HEAD resolve to the same commit ({base_sha[:7]}); "
+            "nothing to review. BASE must predate the phase's commits.",
             file=sys.stderr,
         )
         return 2
 
+    rng = f"{base_sha}..{head_sha}"
     body = (
         "# Review package\n"
-        f"\nRange: {args.base}..{args.head}  ({base_sha[:7]}..{head_sha[:7]})"
-        f"{', plus uncommitted working-tree changes' if worktree else ''}\n"
+        f"\nRange: {args.base}..{args.head}  ({base_sha[:7]}..{head_sha[:7]})\n"
         "\n## Commits\n"
-        f"{commits_text}"
+        f"{git('log', '--oneline', rng)}"
         "\n## Files changed\n"
-        f"{git('diff', '--stat', target)}"
+        f"{git('diff', '--stat', rng)}"
         "\n## Diff\n"
-        f"{diff_text}"
+        f"{git('diff', '-U10', rng)}"
     )
-    if untracked:
-        body += "\n## Untracked files (new, not in the diff above; read them)\n" + "".join(
-            f"{p}\n" for p in untracked
-        )
 
     out = state_root() / f"review-{base_sha[:7]}..{head_sha[:7]}.diff"
     try:

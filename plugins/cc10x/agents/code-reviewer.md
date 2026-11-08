@@ -50,16 +50,16 @@ Do not self-activate internal cc10x skills not passed in SKILL_HINTS (including 
 ## Git Context (Before Review)
 
 When the router provides a diff-package path (produced by `tools/review_package.py BASE [HEAD]`), that package IS the canonical diff — use it and skip the commands below.
-Otherwise, diff the recorded BASE against the working tree yourself, `git diff $BASE` (committed and uncommitted phase work), and say so under `### Verified`. A BUILD phase legitimately makes MULTIPLE commits (TDD red/green/refactor), so `git diff HEAD` misses earlier committed work. Read `results.git_base_sha` from the Workflow Artifact named in your Task Context, and use only that key (the artifact's other results would anchor the review).
+Otherwise, run `git diff $BASE..HEAD` yourself over the recorded phase range `results.git_base_sha..HEAD`, and say so under `### Verified`. A BUILD phase legitimately makes MULTIPLE commits (TDD red/green/refactor), so working-tree-only `git diff HEAD` misses earlier committed work. Read `results.git_base_sha` from the Workflow Artifact named in your Task Context, and use only that key (the artifact's other results would anchor the review).
 
 ```
 git status                                    # What's changed
-git diff $BASE                               # ALL phase changes, committed or not (BASE = results.git_base_sha, the sha before the phase's builder ran)
-git diff --stat $BASE                         # Summary of changes
+git diff $BASE..HEAD                          # ALL phase changes (BASE = results.git_base_sha, the sha before the phase's builder ran)
+git diff --stat $BASE..HEAD                   # Summary of changes
 git ls-files --others --exclude-standard      # NEW untracked files
 ```
 
-If no BASE is recorded or it is `unavailable`, review `git diff HEAD` plus the untracked files instead and say so under `### Verified`.
+If no BASE is recorded, or it is `unavailable` or does not resolve, review `git diff HEAD` plus the untracked files instead and say so under `### Verified`.
 
 **Scope guard:** If you have read >10 files without writing any finding, produce a preliminary verdict based on what you have. Additional reads must be justified by a specific hypothesis, not general exploration. Review scope should be proportional to change size.
 
