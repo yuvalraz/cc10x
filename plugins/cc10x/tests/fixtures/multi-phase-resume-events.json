@@ -836,7 +836,9 @@
         {"event": "remediation_created", "phase": "build-review", "details": {"phase_id": "phase-2"}},
         {"event": "remediation_created", "phase": "build-review", "details": {"phase_id": "phase-2"}}
       ],
-      "expected_action": "ask_user"
+      "phase_status": "partial",
+      "expected_action": "ask_user",
+      "expected_stop": "blocked"
     },
     {
       "name": "(c) a build-finish round counts toward no phase",
@@ -931,6 +933,18 @@
         {"event": "remediation_created", "phase": "build-finish", "details": {"phase_id": "N/A"}}
       ],
       "expected_action": "create_remfix"
+    },
+    {
+      "name": "(k) a BUILD-DONE triage fix now after the last PASS: Stop leaves the completed phase completed",
+      "phased": true,
+      "phase_cursor": "phase-3",
+      "events": [
+        {"event": "remediation_created", "phase": "build-review", "details": {"phase_id": "phase-3"}},
+        {"event": "remediation_created", "phase": "build-review", "details": {"phase_id": "phase-3"}}
+      ],
+      "phase_status": "completed",
+      "expected_action": "ask_user",
+      "expected_stop": "completed"
     }
   ]
 }

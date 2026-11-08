@@ -302,12 +302,14 @@ BREAKER_FINISH = (
 )
 BREAKER_ASK = (
     "- When the count is 2 or more, ask the user before creating the next REM-FIX: `Run one more REM-FIX cycle` (asked"
-    " again before each further cycle) or `Stop here (Recommended)`, which persists state, stops with nothing reverted and"
-    " never marks a passed phase blocked: in QA it sets `phase_status[phase_cursor]` to `blocked`; otherwise it sets"
-    " `pending_gate` to `phase_blocked`, also sets `phase_status[phase_cursor]` to `blocked` for a BUILD phase at"
-    " `phase_cursor`, and for a `build-finish` round, in DEBUG and in a BUILD with no plan leaves `phase_status` unchanged"
-    " and appends a `status_history` entry. The user's next reply answers that gate: a reply asking to continue resumes"
-    " the workflow (this ask comes again at the next block), any other reply ends it."
+    " again before each further cycle) or `Stop here (Recommended)`, which persists state, stops with nothing reverted,"
+    " appends a `status_history` entry and never marks a passed phase blocked: in QA and in a BUILD with a plan it sets"
+    " `phase_status[phase_cursor]` to `blocked` unless that phase is already `completed` (as in the final-review wave or"
+    " a fix after the last PASS), and otherwise leaves `phase_status` unchanged. In QA the workflow continues only when a"
+    " new request names it. Elsewhere Stop sets `pending_gate` to `phase_blocked`, and the user's next reply answers that"
+    " gate: a reply asking to continue resumes the workflow (this ask comes again at the next block); an explicit stop or"
+    " end reply ends it, and ending it is recorded as `workflow_failed` in `status_history` and clears `pending_gate`; any"
+    " other reply keeps the gate: answer it, then ask again."
 )
 BREAKER_HISTORY = (
     "**Remediation history (MANDATORY — do not skip):** each remediation round appends exactly one entry to the workflow"
@@ -339,7 +341,7 @@ QA_BREAKER_LINES = (
     "  event that the same step appends to the events log. Skip the append and the breaker reads the",
     "  events alone for the entire QA route, and the cap above is counted only in the conversation. The",
 )
-ADR_0003 =ROOT / "docs" / "adr" / "0003-blocking-severity.md"
+ADR_0003 = ROOT / "docs" / "adr" / "0003-blocking-severity.md"
 ADR_SUMMARY = (
     "Only CRITICAL and HIGH findings, plus the non-severity gates that already\n"
     "blocked, stop a BUILD phase. One REM-FIX takes the whole blocking set with\n"
@@ -3778,7 +3780,7 @@ ASSERTIONS = [
         SKILLS / "cc10x-router" / "references" / "remediation-and-research.md",
         lambda text: re.search(r"on a mismatch, report it to the user and use the LARGER of the two counts", text) is not None
         and not re.search(r"mismatch[^\n]{0,120}artifact (count )?wins", text),
-        "a missed append or a missed REM-FIX task must never lower the count",
+        "a missed append must never lower the count",
     ),
     A(
         "build-workflow: the finishing options keep their safety lines (no force-push, typed discard as a separate reply, no JUST_GO destructive picks)",

@@ -240,7 +240,10 @@ export function deriveLoop(input: {
   // Per phase, like the circuit breaker (remediation-and-research.md): rounds at the cursor phase (every round when
   // the workflow has no phases), build-finish rounds excluded, the larger of remediation_history and the log's
   // remediation_created count, since a missed append on either side never lowers it.
-  const counted = (phase: unknown, phaseId: string) => phase !== 'build-finish' && (phases.length === 0 || phaseId === cursor)
+  // While the newest round is build-finish (the final-review wave), show the build-finish count instead.
+  const finish = events.filter(e => e.event === 'remediation_created').at(-1)?.phase === 'build-finish'
+  const counted = (phase: unknown, phaseId: string) =>
+    finish ? phase === 'build-finish' : phase !== 'build-finish' && (phases.length === 0 || phaseId === cursor)
   const history = Array.isArray(artifact.remediation_history) ? artifact.remediation_history : []
   return {
     wf: workflowOf(artifact),

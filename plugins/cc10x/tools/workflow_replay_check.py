@@ -1753,6 +1753,12 @@ def phase_cap_action(case: dict[str, Any]) -> tuple[str, bool]:
     return action, history is not None and from_history != from_events
 
 
+def phase_cap_stop(case: dict[str, Any]) -> Any:
+    """The cursor phase's status after `Stop here`: a BUILD with a plan blocks it unless it is already completed."""
+    status = case.get("phase_status")
+    return "blocked" if case["phased"] and status != "completed" else status
+
+
 def locate_resume(case: dict[str, Any]) -> dict[str, Any]:
     """SKILL.md section 4 step 6(a): drop terminal artifacts, resume on a uuid or request match, else look up non-terminal artifacts with a pending_gate."""
     live = [
@@ -1807,6 +1813,12 @@ def check_multi_phase_resume_events(fixture: dict[str, Any]) -> None:
             mismatch == want,
             f"{label}: phase cap mismatch for '{case['name']}' is {mismatch}, expected {want}",
         )
+        if "expected_stop" in case:
+            stop = phase_cap_stop(case)
+            require(
+                stop == case["expected_stop"],
+                f"{label}: phase cap stop for '{case['name']}' is {stop}, expected {case['expected_stop']}",
+            )
 
 
 def check_two_workflow_resume(fixture: dict[str, Any]) -> None:
