@@ -5262,6 +5262,17 @@ ASSERTIONS = [
         "no script greps BUILD_PREFLIGHT: and the router receives only the final message, so the claim of a hook was false; the contract field carries the proof",
     ),
     A(
+        "component-builder: RED test files may precede BUILD_PREFLIGHT",
+        AGENTS / "component-builder.md",
+        lambda text: pinned_line(text, "**BUILD_PREFLIGHT token (MANDATORY before your first non-test edit):**")
+        and pinned_line(text, "Emit exactly once, before you create or modify any file that is not a RED test file. RED test files are the failing check's own files: test files, test fixtures and pin tables such as `prompt_clause_assertions.py`; you may write them first, so the RED pin lands before the token. Decide the four fields before your first edit of any kind (Pre-Flight Check above). Set a field to `fail` if its gate didn't clear — make no non-test edit, return `STATUS: FAIL` instead. No hook reads this line and the router sees only your final message, so the proof is the contract field `BUILD_PREFLIGHT_EMITTED`: the router rejects a PASS whose value is false, a process miss.")
+        and pinned_line(text, "This token is the SINGLE permitted mid-run status line — an explicit exception to agent-common's zero-mid-turn-text rule (agent-common mirrors this exception). Emit it as a lone line in the turn before your first non-test edit; every other output stays in the final response.")
+        and pinned_line(text, "BUILD_PREFLIGHT_EMITTED: [true if token emitted before your first non-test edit]")
+        and "before any file is created/modified" not in text
+        and "MANDATORY before first mutation" not in text,
+        "the builder writes its RED pin before the token; the token still precedes the first non-test edit (tighter loops 2 P1)",
+    ),
+    A(
         "agent-common: the BUILD_PREFLIGHT exception names no hook",
         SKILLS / "agent-common" / "SKILL.md",
         lambda text: "a hook greps for it" not in text

@@ -38,15 +38,15 @@ Recover and follow: `objective`, `inputs`, `files/surfaces`, `expected artifacts
 
 Before writing the first test, scan for uncertainties (ambiguous requirements, hidden assumptions, missing connections). If unsafe without clarification: `STATUS: FAIL`, `PHASE_STATUS: blocked`, `REMEDIATION_REASON: "Builder blocked on missing requirement: {question}"`. If plan is clear: proceed to RED.
 
-**BUILD_PREFLIGHT token (MANDATORY before first mutation):**
+**BUILD_PREFLIGHT token (MANDATORY before your first non-test edit):**
 
 ```
 BUILD_PREFLIGHT: context=pass patterns=pass uncertainty=pass mutation=open
 ```
 
-Emit exactly once, before any file is created/modified. Set a field to `fail` if its gate didn't clear — do NOT mutate, return `STATUS: FAIL` instead. No hook reads this line and the router sees only your final message, so the proof is the contract field `BUILD_PREFLIGHT_EMITTED`: the router rejects a PASS whose value is false, a process miss.
+Emit exactly once, before you create or modify any file that is not a RED test file. RED test files are the failing check's own files: test files, test fixtures and pin tables such as `prompt_clause_assertions.py`; you may write them first, so the RED pin lands before the token. Decide the four fields before your first edit of any kind (Pre-Flight Check above). Set a field to `fail` if its gate didn't clear — make no non-test edit, return `STATUS: FAIL` instead. No hook reads this line and the router sees only your final message, so the proof is the contract field `BUILD_PREFLIGHT_EMITTED`: the router rejects a PASS whose value is false, a process miss.
 
-This token is the SINGLE permitted mid-run status line — an explicit exception to agent-common's zero-mid-turn-text rule (agent-common mirrors this exception). Emit it as a lone line in the turn before your first mutation; every other output stays in the final response.
+This token is the SINGLE permitted mid-run status line — an explicit exception to agent-common's zero-mid-turn-text rule (agent-common mirrors this exception). Emit it as a lone line in the turn before your first non-test edit; every other output stays in the final response.
 
 ## Verification Rigor
 
@@ -134,7 +134,7 @@ CHECKPOINT_TYPE: "none" | "human_verify" | "decision" | "human_action"
 PROOF_STATUS: "passed" | "gaps_found" | "human_needed"
 INPUTS: ["input 1"] | []
 EXPECTED_ARTIFACTS: ["artifact 1"] | []
-BUILD_PREFLIGHT_EMITTED: [true if token emitted before first mutation]
+BUILD_PREFLIGHT_EMITTED: [true if token emitted before your first non-test edit]
 TDD_RED_EXIT: [the observed exit code of the RED run — any non-zero behavioral failure qualifies as RED, and 1 is the conventional recorded value; null if RED never ran]
 TDD_RED_REASON_KIND: "behavioral" | "error" | null
 TDD_RED_REASON: "[verbatim feature-missing failure reason]" | null
