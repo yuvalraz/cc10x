@@ -795,6 +795,29 @@ test('ledger pane 8. a refused expanded write is logged and the pane still draws
   expect(texts[0].text).toBe(MID_HEADER)
 })
 
+test('ledger pane 8b. two presses with no redraw between them end where they started', async ($, on) => {
+  const state = engine(on)
+  answerFs(on, BUILD_MID_PHASE)
+  await start($)
+
+  const ui = await $.ui.mount({ plugin: 'cc10x', component: 'Pane', requestId: 'cc10x-loop', surface: 'terminal', props: paneProps })
+  // Both presses land on the same drawing: the second is raised before the first's write redraws.
+  await Promise.all([ui.press({ key: 'phase:P1' }), ui.press({ key: 'phase:P1' })])
+  await ui.unmount()
+  expect(state.expanded).toEqual({ [WF]: { P1: false } })
+})
+
+test('ledger pane 8c. a workflow that ended workflow_failed draws a failed header and a failed route row', async ($, on) => {
+  engine(on)
+  const failed = '{"ts": "2026-10-20T07:00:00Z", "wf": "wf-20261020T063253Z-c4eb6de6", "event": "workflow_failed", "phase": "plan", "agent": "router", "decision": "N/A", "details": {}}\n'
+  answerFs(on, { ...PLAN_AT_GAP1, eventsText: PLAN_AT_GAP1.eventsText + failed })
+  await start($)
+
+  const { buttons, texts } = await ledger($)
+  expect(texts[0].text).toBe('cc10x · PLAN wf-20261020T063253Z-c4eb6de6 · failed 2026-10-20T07:00:00Z')
+  expect(buttons[0]).toEqual({ key: 'phase:PLAN', label: '▾ PLAN failed · 0 fixes' })
+})
+
 test('ledger pane 9. BUILD_REMEDIATION: P1 open shows the REM-FIX marker between hunter CLEAN and builder FIXED, remediation 1/2', async ($, on) => {
   engine(on)
   answerFs(on, BUILD_REMEDIATION)

@@ -109,7 +109,7 @@ export function isFinished(artifact: Artifact, events: LoopEvent[]): boolean {
 }
 
 // The terminal marker that finishes the workflow, or null while it runs.
-function terminalOf(artifact: Artifact, events: LoopEvent[]): string | null {
+export function terminalOf(artifact: Artifact, events: LoopEvent[]): string | null {
   if (artifact.phase_cursor === 'memory-finalize' && obj(artifact.phase_status)['memory-finalize'] === 'completed') return 'memory_finalized'
   const history = Array.isArray(artifact.status_history) ? artifact.status_history : []
   const last = obj(history[history.length - 1])

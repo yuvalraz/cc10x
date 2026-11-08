@@ -123,10 +123,11 @@ as a dim line until a directory turns up again.
   has run, and a dim `— REM-FIX n` marker for each fix round. Enter on a result or a
   running agent opens its transcript in the main view, and while a transcript shows,
   `back to conversation` at the top returns. A step with no transcript to open is dim:
-  a chain agent's step notes `no transcript`, a router step has no note. If the view
-  cannot move, a toast says why. Below the rows come the remediation count, the gate,
-  and any read error or warning. When the workflow finishes, the pane keeps its ledger
-  under a `finished` header, with no remediation line. With no workflow at all, it
+  a chain agent's step notes `no transcript`, an agent outside the chain has no note.
+  If the view cannot move, a toast says why. Below the rows come the remediation count,
+  the gate, and any read error or warning. When the workflow finishes, the pane keeps
+  its ledger under a `finished` header (`failed` when it ended failed), with no
+  remediation line. With no workflow at all, it
   says `no live workflow`.
 
 **Commands.** `/cc10x-loop` opens the pane. `/cc10x-loop status` re-reads and prints

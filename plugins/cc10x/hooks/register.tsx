@@ -3,7 +3,7 @@ import type { CoreEngineInterface, Register } from 'claude-code'
 
 import type { Expanded, LedgerPhase, LedgerStep, LoopState, LoopView, Spawn } from '../types'
 import { REMEDIATION, ROUTES } from './loop-routes'
-import { BREAKER, WORKFLOWS, bandLine, deriveLedger, deriveLoop, elapsed, insideRoot, isFinished, parseEvents, remediation, workflowDirs, workflowOf, type Artifact } from './loop-state'
+import { BREAKER, WORKFLOWS, bandLine, deriveLedger, deriveLoop, elapsed, insideRoot, parseEvents, remediation, terminalOf, workflowDirs, workflowOf, type Artifact } from './loop-state'
 
 const PANE = 'cc10x-loop'
 const EMPTY: LoopView = { live: null, last: null, error: null }
@@ -52,9 +52,11 @@ async function scanDir($: Api, dir: string, previous: LoopView, recorded: Spawn[
       const artifact = raw as Artifact
       reading = 'events log unreadable'
       const events = names.has(log) ? parseEvents(await $.fs.read(dir + '/' + log)) : []
-      if (isFinished(artifact, events)) {
+      const terminal = terminalOf(artifact, events)
+      if (terminal !== null) {
         last ??= {
           wf: workflowOf(artifact),
+          failed: terminal === 'workflow_failed',
           finishedAt: events[events.length - 1]?.ts ?? '',
           path,
           type: typeof artifact.workflow_type === 'string' ? artifact.workflow_type : '',
@@ -300,9 +302,9 @@ export const register: Register = on => {
     const key = shown === null ? '' : shown.wf || shown.path
     const stored = (await read($, expanded))[key] ?? {}
     // The only state write the pane makes, and only on a press: a render may not write.
-    const toggle = (id: string, open: boolean) => async () => {
+    const toggle = (id: string, isCursor: boolean) => async () => {
       try {
-        await update($, expanded, m => ({ ...m, [key]: { ...m[key], [id]: !open } }))
+        await update($, expanded, m => ({ ...m, [key]: { ...m[key], [id]: !(m[key]?.[id] ?? isCursor) } }))
       } catch (err) {
         $.ui.log(`cc10x: expand failed: ${reason(err)}`)
       }
@@ -311,8 +313,8 @@ export const register: Register = on => {
       if (s.kind === 'remfix') return <Text dimColor>{'— REM-FIX ' + n}</Text>
       const label = s.kind === 'running' ? s.agent + ' running ' + elapsed(now - (s.startedAt ?? now)) : join([s.agent, s.taskPhase, s.decision ?? '', hhmm(s.at)])
       const { agentId } = s
-      if (agentId === undefined) return <Text dimColor>{label + (AGENTS.has(s.agent) ? ' · no transcript' : '')}</Text>
-      const id = s.kind === 'running' ? 'running:' + s.agent : 'step:' + s.index
+      const id = s.kind === 'running' ? 'running:' + s.agent : s.index === undefined ? undefined : 'step:' + s.index
+      if (agentId === undefined || id === undefined) return <Text dimColor>{label + (AGENTS.has(s.agent) ? ' · no transcript' : '')}</Text>
       return <Button key={id} label={label} plain onPress={() => view($, { agentId })} />
     }
     const phase = (p: LedgerPhase) => {
@@ -320,7 +322,7 @@ export const register: Register = on => {
       let fixes = 0
       return (
         <Box flexDirection="column">
-          <Button key={'phase:' + p.id} label={(open ? '▾ ' : '▸ ') + p.id + ' ' + p.status + ' · ' + p.rounds + (p.rounds === 1 ? ' fix' : ' fixes')} plain onPress={toggle(p.id, open)} />
+          <Button key={'phase:' + p.id} label={(open ? '▾ ' : '▸ ') + p.id + ' ' + p.status + ' · ' + p.rounds + (p.rounds === 1 ? ' fix' : ' fixes')} plain onPress={toggle(p.id, p.isCursor)} />
           {open && <Box flexDirection="column" paddingLeft={2}>{p.steps.map(s => step(s, s.kind === 'remfix' ? ++fixes : 0))}</Box>}
         </Box>
       )
@@ -330,7 +332,7 @@ export const register: Register = on => {
       live !== null
         ? join(['cc10x', join([live.type, live.wf]), live.request.replace(/\s+/g, ' ').slice(0, 40), live.otherLive > 0 ? `+${live.otherLive} other live` : ''], ' · ')
         : last !== null
-          ? join(['cc10x', join([last.type ?? 'workflow', last.wf]), 'finished' + (last.finishedAt ? ' ' + last.finishedAt : '')], ' · ')
+          ? join(['cc10x', join([last.type ?? 'workflow', last.wf]), (last.failed ? 'failed' : 'finished') + (last.finishedAt ? ' ' + last.finishedAt : '')], ' · ')
           : 'no live workflow'
     const footer = live === null ? '' : `remediation ${remediation(live.rounds) + (live.rounds > BREAKER ? ' (breaker ' + BREAKER + ')' : '')} · gate: ${live.gate ?? 'none'}`
     const dim = [...(live?.warnings ?? []), ...(error === null ? [] : [error])]

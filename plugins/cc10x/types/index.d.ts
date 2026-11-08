@@ -55,7 +55,7 @@ export type LoopState = {
 export type LoopView = {
   live: LoopState | null
   // `path`: the finished artifact, so a refresh from outside the root can re-read its dir.
-  last: { wf: string; finishedAt: string; path: string; type: string; ledger: LedgerPhase[] } | null
+  last: { wf: string; finishedAt: string; path: string; type: string; ledger: LedgerPhase[]; failed?: boolean } | null
   error: string | null
 }
 export type Expanded = Record<string, Record<string, boolean>>
