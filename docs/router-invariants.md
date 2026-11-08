@@ -114,7 +114,7 @@ Validated against the live plugin surface:
 ### INV-006: Remediation loops are workflow-scoped and bounded
 
 **Covers:** Router `## 9. Remediation And Workflow Rules`, `## 11. Re-Review Loop`, `references/remediation-and-research.md`
-**Enforces:** `kind:remfix` counting, re-review task creation, and cycle limits all use the current `wf` scope.
+**Enforces:** `kind:remfix` counting, re-review task creation, and cycle limits all use the current `wf` scope; a re-review or re-hunt after a REM-FIX audits the whole phase diff `results.git_base_sha..HEAD`.
 **If removed:** Remediation loops can count unrelated tasks, overrun, or deadlock in shared task lists.
 **Safe to remove:** Never.
 

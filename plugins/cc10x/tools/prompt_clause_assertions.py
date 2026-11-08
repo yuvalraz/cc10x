@@ -5301,6 +5301,32 @@ ASSERTIONS = [
         "the override table row and the registry agree with the builder's item 7 (tighter loops 2 P2)",
     ),
     A(
+        "remediation: reviewers report the whole class and re-checks audit the whole phase diff; a build-finish REM-FIX is re-verified only",
+        SKILLS / "cc10x-router" / "references" / "remediation-and-research.md",
+        lambda text: pinned_line(text, "The router creates every REM-FIX with this call. The subject names the executing agent the dispatch table assigns: `component-builder`, or `bug-investigator` when the REM-FIX is created in a DEBUG workflow or has `origin:bug-investigator`. `origin:` names the agent whose findings triggered the fix, never the executor. `phase:` carries the originating phase from the metadata enum (for example `build-review`). Once the last phase (in a BUILD with no plan, the only one) has verified `PASS`, every REM-FIX carries `phase:build-finish` instead (the fix wave of `build-workflow.md` `### Final whole-branch review` and any fix its re-verify needs), so it counts toward the `build-finish` budget, not toward a phase.")
+        and pinned_line(text, '2. Create a re-review task. First build the diff package over the whole phase, `python3 "${CLAUDE_PLUGIN_ROOT}/tools/review_package.py" {results.git_base_sha} HEAD` (add `--repo "$CC10X_REPO_DIR"` when it is set), and pass its path to the re-review and the re-hunt; a REM-FIX never re-records `results.git_base_sha`. When it is `unavailable`, pass no package: both agents fall back to the working-tree diff and say so. A completed REM-FIX with `phase:build-finish` skips this step and step 3 and is re-verified only; steps 4-7 and the precondition gate below still apply to that re-verify (step 5 has no task to block on, step 7 counts only `re_verify`, and the gate runs before step 4 creates the re-verify).')
+        and pinned_line(text, r'''  description: "wf:{workflow_uuid}\nkind:agent\norigin:router\nphase:re-review\nplan:{plan_file or 'N/A'}\nscope:{scope from completed remfix}\nreason:{reason from completed remfix}\n\nRe-review the whole phase diff `results.git_base_sha..HEAD` (the diff package), not only the fix delta, and report every instance of each defect class in this pass.",''')
+        and pinned_line(text, r'''  description: "wf:{workflow_uuid}\nkind:agent\norigin:router\nphase:re-hunt\nplan:{plan_file or 'N/A'}\nscope:{scope from completed remfix}\nreason:{reason from completed remfix}\n\nRe-scan the whole phase diff `results.git_base_sha..HEAD` (the diff package) for silent failures, not only the fix delta, and report every instance of each defect class in this pass.",''')
+        and contains_none("Re-review the changes made", "remediated surface", "scope=CRITICAL_ONLY", "FULL re-audit")(text)
+        and pinned_line(
+            (AGENTS / "code-reviewer.md").read_text(encoding="utf-8"),
+            '**Feedback form:** State what is wrong and why it matters before stating the fix. Reference the file and line. Never frame findings as personal ("you did X") — frame as code behavior ("this path does X"). A finding is a defect class, not one instance: grep for the same rule, pattern or call in the reviewed diff and in the direct callers of its changed files, report every instance in that one finding with all affected locations, and list the sibling sites you checked and found clean under `### Verified` (the class is the named risk Context Hygiene allows one focused check for).',
+        )
+        and pinned_line(
+            (AGENTS / "code-reviewer.md").read_text(encoding="utf-8"),
+            "- Re-review: request the same scope as this workflow's first review (`N/A` in BUILD, `ALL_ISSUES` in DEBUG), never a legacy `CRITICAL_ONLY` passed in context.",
+        )
+        and pinned_line(
+            (AGENTS / "failure-hunter.md").read_text(encoding="utf-8"),
+            "2. **Audit each** - Is error logged? Does user get feedback? Is catch specific? Treat each defect as a class: grep for the same pattern within the scoping heuristic's bounds, report every instance in one `### Findings` entry with each file:line, and list the sibling sites you checked under `### Coverage`.",
+        )
+        and pinned_line(
+            (ROOT / "docs" / "router-invariants.md").read_text(encoding="utf-8"),
+            "**Enforces:** `kind:remfix` counting, re-review task creation, and cycle limits all use the current `wf` scope; a re-review or re-hunt after a REM-FIX audits the whole phase diff `results.git_base_sha..HEAD`.",
+        ),
+        "a re-check scoped to the fix delta misses siblings and earlier phase work; the final-review fix wave is re-verified only (tighter loops 2 P3)",
+    ),
+    A(
         "agent-common: the BUILD_PREFLIGHT exception names no hook",
         SKILLS / "agent-common" / "SKILL.md",
         lambda text: "a hook greps for it" not in text

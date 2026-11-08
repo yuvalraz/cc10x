@@ -16,7 +16,7 @@ reason:{short remediation reason}
 
 ### REM-FIX TaskCreate template
 
-The router creates every REM-FIX with this call. The subject names the executing agent the dispatch table assigns: `component-builder`, or `bug-investigator` when the REM-FIX is created in a DEBUG workflow or has `origin:bug-investigator`. `origin:` names the agent whose findings triggered the fix, never the executor. `phase:` carries the originating phase from the metadata enum (for example `build-review`).
+The router creates every REM-FIX with this call. The subject names the executing agent the dispatch table assigns: `component-builder`, or `bug-investigator` when the REM-FIX is created in a DEBUG workflow or has `origin:bug-investigator`. `origin:` names the agent whose findings triggered the fix, never the executor. `phase:` carries the originating phase from the metadata enum (for example `build-review`). Once the last phase (in a BUILD with no plan, the only one) has verified `PASS`, every REM-FIX carries `phase:build-finish` instead (the fix wave of `build-workflow.md` `### Final whole-branch review` and any fix its re-verify needs), so it counts toward the `build-finish` budget, not toward a phase.
 
 ```text
 TaskCreate({
@@ -334,12 +334,12 @@ Do not misread a tool/fallback message as a hard blocker (the "you ARE the provi
 When a `kind:remfix` task completes:
 
 1. The circuit breaker is evaluated only when a REM-FIX is created (see `### Circuit breaker`); completion of a REM-FIX proceeds to step 2 without a second count. REVIEW never creates a REM-FIX (`references/review-workflow.md`), so this loop runs only in BUILD and DEBUG.
-2. Create a re-review task:
+2. Create a re-review task. First build the diff package over the whole phase, `python3 "${CLAUDE_PLUGIN_ROOT}/tools/review_package.py" {results.git_base_sha} HEAD` (add `--repo "$CC10X_REPO_DIR"` when it is set), and pass its path to the re-review and the re-hunt; a REM-FIX never re-records `results.git_base_sha`. When it is `unavailable`, pass no package: both agents fall back to the working-tree diff and say so. A completed REM-FIX with `phase:build-finish` skips this step and step 3 and is re-verified only; steps 4-7 and the precondition gate below still apply to that re-verify (step 5 has no task to block on, step 7 counts only `re_verify`, and the gate runs before step 4 creates the re-verify).
 
 ```text
 TaskCreate({
   subject: "CC10X code-reviewer: Re-review after REM-FIX",
-  description: "wf:{workflow_uuid}\nkind:agent\norigin:router\nphase:re-review\nplan:{plan_file or 'N/A'}\nscope:{scope from completed remfix}\nreason:{reason from completed remfix}\n\nRe-review the changes made by the completed remediation task.\nIf scope=ALL_ISSUES: perform a FULL re-audit of CRITICAL and HIGH issue categories after remediation.\nIf scope=CRITICAL_ONLY: verify the CRITICAL issue was resolved and treat HIGH issues as deferred unless newly escalated.",
+  description: "wf:{workflow_uuid}\nkind:agent\norigin:router\nphase:re-review\nplan:{plan_file or 'N/A'}\nscope:{scope from completed remfix}\nreason:{reason from completed remfix}\n\nRe-review the whole phase diff `results.git_base_sha..HEAD` (the diff package), not only the fix delta, and report every instance of each defect class in this pass.",
   activeForm: "Re-reviewing fix"
 }) -> rereview_task_id
 ```
@@ -349,7 +349,7 @@ TaskCreate({
 ```text
 TaskCreate({
   subject: "CC10X failure-hunter: Re-hunt after REM-FIX",
-  description: "wf:{workflow_uuid}\nkind:agent\norigin:router\nphase:re-hunt\nplan:{plan_file or 'N/A'}\nscope:{scope from completed remfix}\nreason:{reason from completed remfix}\n\nRe-scan for silent failures after remediation. Focus on the remediated surface and its immediate call sites.",
+  description: "wf:{workflow_uuid}\nkind:agent\norigin:router\nphase:re-hunt\nplan:{plan_file or 'N/A'}\nscope:{scope from completed remfix}\nreason:{reason from completed remfix}\n\nRe-scan the whole phase diff `results.git_base_sha..HEAD` (the diff package) for silent failures, not only the fix delta, and report every instance of each defect class in this pass.",
   activeForm: "Re-hunting failures"
 }) -> rehunt_task_id
 ```

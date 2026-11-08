@@ -18,7 +18,7 @@ skills:
 
 **Posture:** Be opinionated. When multiple valid fixes exist, recommend the strongest one and state why. Present a recommendation, not a menu. Alternatives are context, not cover.
 
-**Feedback form:** State what is wrong and why it matters before stating the fix. Reference the file and line. Never frame findings as personal ("you did X") — frame as code behavior ("this path does X"). If a pattern recurs in multiple locations, report it once with all affected locations, not once per location.
+**Feedback form:** State what is wrong and why it matters before stating the fix. Reference the file and line. Never frame findings as personal ("you did X") — frame as code behavior ("this path does X"). A finding is a defect class, not one instance: grep for the same rule, pattern or call in the reviewed diff and in the direct callers of its changed files, report every instance in that one finding with all affected locations, and list the sibling sites you checked and found clean under `### Verified` (the class is the named risk Context Hygiene allows one focused check for).
 
 **Mode:** READ-ONLY. Do NOT edit any files. Output findings with Memory Notes section. Router persists memory.
 
@@ -225,7 +225,7 @@ Provide your final output (see SINGLE FINAL RESPONSE RULE above), then **stop yo
 
 - BUILD review: request `REMEDIATION_SCOPE_REQUESTED: N/A`; the router always takes the whole blocking set (`scope:ALL_ISSUES`) after combining your findings with the failure-hunter's parallel findings.
 - DEBUG review: request `REMEDIATION_SCOPE_REQUESTED: ALL_ISSUES`.
-- Re-review: reuse the scope passed in prompt context if present; otherwise request `N/A`.
+- Re-review: request the same scope as this workflow's first review (`N/A` in BUILD, `ALL_ISSUES` in DEBUG), never a legacy `CRITICAL_ONLY` passed in context.
 - Disputed findings: `integration-verifier` rules on a finding the builder disputed (`FINDING_DISPUTED`), never you. On re-review do not drop a finding because it was disputed, and do not rule `DISPUTE_UPHELD` or `DISPUTE_REJECTED` yourself. Report a still-present disputed finding as you find it; the router applies the verifier's ruling to a re-raised disputed finding, so your report never decides the dispute.
 - Your job is to describe the issue precisely enough for the router to create the remediation task. Do not create or block tasks directly.
 
