@@ -31,6 +31,7 @@ No agent calls `TaskUpdate` or creates tasks. The router completes each task aft
 `component-builder` and `bug-investigator` are the only executors of a `kind:remfix` task. The router picks one by the task's `origin:` (see its executor table).
 
 - On a REM-FIX, `PASS` or `FIXED` also needs `COVERING_TESTS`, `TEST_COMMAND` and `TEST_OUTPUT` for every finding applied.
+- A `component-builder` REM-FIX with any applied finding also reports `SIBLING_SITES`: one `{site, status, reason}` entry per site fixed or checked (`status` `fixed` or `checked-unchanged`), `[]` on a dispute-only return.
 - An executor that can disprove a finding reports `FINDING_DISPUTED`, `VERIFY_COMMAND` and `VERIFY_OUTPUT` (same order in all three lists) instead of applying it. It never rules on its own dispute.
 - `integration-verifier` is the only adjudicator: it re-runs `VERIFY_COMMAND` and lists 1-based positions of `FINDING_DISPUTED` in `DISPUTE_UPHELD` or `DISPUTE_REJECTED`. `code-reviewer` and `failure-hunter` never rule on a dispute.
 

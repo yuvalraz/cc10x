@@ -78,6 +78,18 @@
       ],
       "VERIFY_OUTPUT": [
         "14:  router.use(requireAdmin)"
+      ],
+      "SIBLING_SITES": [
+        {
+          "site": "src/routes/team_settings.ts:31",
+          "status": "fixed",
+          "reason": "cited site"
+        },
+        {
+          "site": "src/routes/team_members.ts:18",
+          "status": "checked-unchanged",
+          "reason": "already awaits the save"
+        }
       ]
     },
     "verifier_adjudication": {

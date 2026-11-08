@@ -1508,6 +1508,7 @@ def check_remfix_case(
             require(executor_contract.get("PHASE_STATUS") == "partial", f"{label}: a dispute-only report must carry PHASE_STATUS partial")
             require(executor_contract.get("PROOF_STATUS") == "gaps_found", f"{label}: a dispute-only report must carry PROOF_STATUS gaps_found")
             require(executor_contract.get("BLOCKED_ITEMS") == [], f"{label}: a dispute-only report must carry empty BLOCKED_ITEMS")
+            require(not report.get("SIBLING_SITES"), f"{label}: a dispute-only report carries SIBLING_SITES []")
         else:
             require(
                 all(str(s.get("name", "")).startswith("Regression:") for s in scenarios),
@@ -1535,6 +1536,18 @@ def check_remfix_case(
         for field in ("TEST_COMMAND", "TEST_OUTPUT"):
             value = report[field]
             require(isinstance(value, str) and bool(value.strip()), f"{label}: REM-FIX report empty {field} (a non-blank string)")
+        if executor == "component-builder":
+            siblings = report.get("SIBLING_SITES")
+            require(isinstance(siblings, list) and bool(siblings), f"{label}: REM-FIX report empty SIBLING_SITES (one {{site, status, reason}} entry per site fixed or checked)")
+            require(
+                all(
+                    isinstance(entry, dict)
+                    and all(isinstance(entry.get(k), str) and entry[k].strip() for k in ("site", "reason"))
+                    and entry.get("status") in ("fixed", "checked-unchanged")
+                    for entry in siblings
+                ),
+                f"{label}: REM-FIX report has a malformed SIBLING_SITES entry (non-blank site and reason, status fixed or checked-unchanged)",
+            )
     if disputed:
         for field in ("DISPUTE_UPHELD", "DISPUTE_REJECTED"):
             require(field not in report, f"{label}: {field} is produced by integration-verifier, not by the REM-FIX report")

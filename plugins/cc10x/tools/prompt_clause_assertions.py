@@ -4159,9 +4159,9 @@ ASSERTIONS = [
     ],
     # --- P4.T4.2: builder REM-FIX producer fields, verifier adjudication, BASE tamper check, E2, any non-zero RED (A5, E2) ---
     A(
-        "component-builder: YAML contract carries the six REM-FIX producer fields",
+        "component-builder: YAML contract carries the seven REM-FIX producer fields",
         AGENTS / "component-builder.md",
-        yaml_has_keys("COVERING_TESTS", "TEST_COMMAND", "TEST_OUTPUT", "FINDING_DISPUTED", "VERIFY_COMMAND", "VERIFY_OUTPUT"),
+        yaml_has_keys("COVERING_TESTS", "TEST_COMMAND", "TEST_OUTPUT", "FINDING_DISPUTED", "VERIFY_COMMAND", "VERIFY_OUTPUT", "SIBLING_SITES"),
         "the router's re-review gate and dispute path name the remediating builder as the producer, so its contract must declare the fields",
     ),
     A(
@@ -5271,6 +5271,34 @@ ASSERTIONS = [
         and "before any file is created/modified" not in text
         and "MANDATORY before first mutation" not in text,
         "the builder writes its RED pin before the token; the token still precedes the first non-test edit (tighter loops 2 P1)",
+    ),
+    A(
+        "component-builder: a REM-FIX fixes the defect class and lists every sibling site in SIBLING_SITES",
+        AGENTS / "component-builder.md",
+        lambda text: pinned_line(text, "7. **Whole class, removal first.** Fix each finding's defect class, not only the cited instance: check its sibling sites (the other places the same rule, pattern or call appears) and report every site you fixed or checked in `SIBLING_SITES`, one `{site, status, reason}` entry each, `status` `fixed` or `checked-unchanged`, the cited site included. Prefer removing or narrowing rule or code text over adding it. Your RED run is the proof that a covering test fails on the pre-fix code: run it before the fix, as on any build. A dispute-only return carries `SIBLING_SITES: []`.")
+        and pinned_line(text, "On any other task leave these seven fields empty or omit them.")
+        and pinned_line(text, 'SIBLING_SITES: [] | [{"site": "file:line", "status": "fixed | checked-unchanged", "reason": "one line"}]  # kind:remfix only; [] on a dispute-only return')
+        and pinned_line(text, "- **REM-FIX:** on a `kind:remfix` task, `STATUS=PASS` also requires non-empty `COVERING_TESTS`, `TEST_COMMAND` and `TEST_OUTPUT` for every finding you applied, or a dispute per the REM-FIX section, and a non-empty `SIBLING_SITES` when you applied any finding (item 7). The one exception is the dispute-only return (REM-FIX section, item 5): every finding disputed, no code changed, `TDD_RED_EXIT` and `TDD_GREEN_EXIT` null, `PHASE_EXIT_READY: false`.")
+        and "these six fields" not in text,
+        "a REM-FIX that patches only the cited instance leaves its siblings for the next review round (tighter loops 2 P2)",
+    ),
+    A(
+        "remediation: the REM-FIX template asks component-builder for the class fix and SIBLING_SITES, and the gate fails closed without them",
+        SKILLS / "cc10x-router" / "references" / "remediation-and-research.md",
+        lambda text: pinned_line(text, '  description: "wf:{workflow_uuid}\\nkind:remfix\\norigin:{originating agent}\\nphase:{originating phase}\\nplan:{plan_file or \'N/A\'}\\nscope:{ALL_ISSUES|CRITICAL_ONLY|N/A}\\nreason:{short remediation reason}\\n\\nFix the findings below as ONE batch. Verify each finding against the code before changing it. When the executor is component-builder, also fix each finding\'s defect class, not only the cited instance: check its sibling sites and report them in SIBLING_SITES, prefer removing or narrowing text over adding it, and run a covering test that fails on the pre-fix code before you fix. When done, report COVERING_TESTS, TEST_COMMAND and TEST_OUTPUT for the tests that exercise the fixed behavior. For a finding you can disprove, report FINDING_DISPUTED, VERIFY_COMMAND and VERIFY_OUTPUT instead of applying it. When every finding is disproved and no code changed, return the dispute-only report.\\n\\nFindings:\\n{findings}\\n\\n{rejected disputes block, only when created from a DISPUTE_REJECTED ruling}",')
+        and pinned_line(text, "- `SIBLING_SITES` is produced by `component-builder` on a REM-FIX with any applied finding, one `{site, status, reason}` entry per site fixed or checked; `bug-investigator` keeps its own `BLAST_RADIUS_SCAN`.")
+        and pinned_line(text, "- A `component-builder` REM-FIX with any applied finding also needs a non-empty `SIBLING_SITES` whose every entry has a `site`, a `status` of `fixed` or `checked-unchanged` and a `reason`; without it the gate fails closed the same way. A dispute-only return carries `SIBLING_SITES: []`."),
+        "the router asks only component-builder for SIBLING_SITES (bug-investigator shares the template) and its re-review gate enforces them (tighter loops 2 P2)",
+    ),
+    A(
+        "policy and registry: a component-builder REM-FIX proof includes SIBLING_SITES, [] on a dispute-only return",
+        SKILLS / "cc10x-router" / "references" / "workflow-artifact-and-hook-policy.md",
+        lambda text: pinned_line(text, "| component-builder | `STATUS=PASS` requires a non-zero `TDD_RED_EXIT` (1 by convention), `TDD_RED_REASON_KIND=behavioral` with **non-empty `TDD_RED_REASON`** (a false-RED — `TDD_RED_REASON_KIND=error` from import/syntax/collection failure — is rejected same as missing RED; a behavioral RED with an empty reason is also rejected), `TDD_GREEN_EXIT=0`, `BUILD_PREFLIGHT_EMITTED=true`, `PHASE_STATUS=completed`, `PHASE_EXIT_READY=true`, `PROOF_STATUS=passed`, empty `BLOCKED_ITEMS`, and a non-empty `SCENARIOS` array with at least one passing scenario. That passing scenario must include non-empty `name`, `command`, `expected`, `actual`, and `exit_code`. **Seam gate:** when `build_scope=standard` with a plan that provides `test_seams`, `SEAM_GATE_STATUS` must be `confirmed` (`TEST_SEAMS` non-empty, matching the plan's `test_seams`) or `disagreed` (with a DECISIONS rationale + a better seam in `TEST_SEAMS`, OR `STATUS=FAIL` with the ambiguity `REMEDIATION_REASON` and empty `TEST_SEAMS`); when `build_scope=standard` with a legacy plan whose phase omits `test_seams`, `SEAM_GATE_STATUS=proposed` is accepted (`TEST_SEAMS` non-empty — builder proposes at BUILD_PREFLIGHT); when direct/no-plan, `SEAM_GATE_STATUS=proposed` (`TEST_SEAMS` non-empty); when `build_scope=trivial`, `SEAM_GATE_STATUS=not_applicable` is accepted. **Documentation, prompt and config-only phases** have the same RED/GREEN requirement: the scripted check is a validator, grep or replay check with a real exit code, RED is that check failing before the edit and passing after, and it is `behavioral` when it asserts content, `error` when it only failed to run. **`kind:remfix` proof:** `STATUS=PASS` also requires non-empty `COVERING_TESTS`, `TEST_COMMAND` and `TEST_OUTPUT` and a non-empty `SIBLING_SITES` (`{site, status, reason}` entries), except on the **dispute-only return**: every dispatched finding is in `FINDING_DISPUTED` (equal count, the entries distinct and each mapping to one finding in the task), no code changed, so `TDD_RED_EXIT`, `TDD_RED_REASON_KIND`, `TDD_RED_REASON` and `TDD_GREEN_EXIT` are null and `COVERING_TESTS`, `TEST_COMMAND` and `TEST_OUTPUT` may be empty or null and `SIBLING_SITES` is `[]`. That return is the only `PASS` accepted with `PHASE_EXIT_READY=false`: it must carry `PHASE_STATUS=partial`, `PROOF_STATUS=gaps_found`, empty `BLOCKED_ITEMS` and a scenario per dispute. The router persists `phase_status=partial` (the phase has not exited and `phase_cursor` does not advance), completes the REM-FIX task and enters the Re-Review loop, whose re-verify is the only thing that can close the gate; `partial` is the true state, and the stop it implies is a stop on advancing the phase, not on that loop. When the verifier adjudicates every dispute validly and returns `PASS`, the router sets `phase_status=completed` and runs `phase_exit_gate` on the verifier return and the phase's earlier builder evidence, never on the dispute-only report (Re-review precondition gate). A fabricated RED or GREEN on a dispute-only return is invalid output. A report with even one applied finding keeps every requirement above. |")
+        and pinned_line(
+            (ROOT / "docs" / "agent-contract-registry.md").read_text(encoding="utf-8"),
+            "- A `component-builder` REM-FIX with any applied finding also reports `SIBLING_SITES`: one `{site, status, reason}` entry per site fixed or checked (`status` `fixed` or `checked-unchanged`), `[]` on a dispute-only return.",
+        ),
+        "the override table row and the registry agree with the builder's item 7 (tighter loops 2 P2)",
     ),
     A(
         "agent-common: the BUILD_PREFLIGHT exception names no hook",
