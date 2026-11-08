@@ -59,7 +59,7 @@ git diff --stat $BASE..HEAD                   # Summary of changes
 git ls-files --others --exclude-standard      # NEW untracked files
 ```
 
-If reviewing uncommitted working-tree changes (no recorded BASE), fall back to `git diff HEAD`.
+If no BASE is recorded or it is `unavailable`, review `git diff HEAD` plus the untracked files instead and say so under `### Verified`.
 
 **Scope guard:** If you have read >10 files without writing any finding, produce a preliminary verdict based on what you have. Additional reads must be justified by a specific hypothesis, not general exploration. Review scope should be proportional to change size.
 
@@ -225,7 +225,7 @@ Provide your final output (see SINGLE FINAL RESPONSE RULE above), then **stop yo
 
 - BUILD review: request `REMEDIATION_SCOPE_REQUESTED: N/A`; the router always takes the whole blocking set (`scope:ALL_ISSUES`) after combining your findings with the failure-hunter's parallel findings.
 - DEBUG review: request `REMEDIATION_SCOPE_REQUESTED: ALL_ISSUES`.
-- Re-review: request the same scope as this workflow's first review (`N/A` in BUILD, `ALL_ISSUES` in DEBUG), never a legacy `CRITICAL_ONLY` passed in context.
+- Re-review: request the first review's scope, read from the Workflow Artifact's `workflow_type` (the one key you read besides `results.git_base_sha`): `N/A` for `BUILD`, `ALL_ISSUES` for `DEBUG`; never a legacy `CRITICAL_ONLY` passed in context.
 - Disputed findings: `integration-verifier` rules on a finding the builder disputed (`FINDING_DISPUTED`), never you. On re-review do not drop a finding because it was disputed, and do not rule `DISPUTE_UPHELD` or `DISPUTE_REJECTED` yourself. Report a still-present disputed finding as you find it; the router applies the verifier's ruling to a re-raised disputed finding, so your report never decides the dispute.
 - Your job is to describe the issue precisely enough for the router to create the remediation task. Do not create or block tasks directly.
 
