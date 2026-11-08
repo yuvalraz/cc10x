@@ -118,8 +118,43 @@ def main() -> int:
         )
         ok &= bool(c4)
 
+        # [5] BASE vs the working tree: an uncommitted tracked change and a new
+        # untracked file are in the package; .cc10x/ is not listed.
+        (a / "README.md").write_text("UNCOMMITTED_EDIT\n")
+        (a / "NEW_UNTRACKED.txt").write_text("new\n")
+        r = run_script(a, None, [base_a, "HEAD"])
+        p = wrote_path(r.stdout)
+        text = Path(p).read_text() if p else ""
+        untracked = text.split("## Untracked files", 1)[-1] if "## Untracked files" in text else ""
+        c5 = (
+            r.returncode == 0
+            and "UNCOMMITTED_EDIT" in text
+            and "A_FILE" in text
+            and "NEW_UNTRACKED.txt" in untracked
+            and ".cc10x" not in untracked
+        )
+        print(f"[5] uncommitted + untracked work is in the package: {'PASS' if c5 else 'FAIL'} (rc={r.returncode})")
+        ok &= bool(c5)
+
+        # [6] BASE == HEAD with a dirty tree is reviewable, not an error
+        r = run_script(a, None, [head_a, "HEAD"])
+        p = wrote_path(r.stdout)
+        c6 = r.returncode == 0 and p and "UNCOMMITTED_EDIT" in Path(p).read_text()
+        print(f"[6] BASE==HEAD with a dirty tree packages the tree: {'PASS' if c6 else 'FAIL'} (rc={r.returncode})")
+        ok &= bool(c6)
+
+        # [7] BASE == HEAD with a clean tree: nothing to review -> rc 2
+        r = run_script(b, None, [head_b, "HEAD"])
+        c7 = r.returncode == 2 and "nothing to review" in r.stderr
+        print(f"[7] clean tree at BASE: rc 2 nothing to review: {'PASS' if c7 else 'FAIL'} (rc={r.returncode})")
+        ok &= bool(c7)
+
     print("ALL PASS" if ok else "FAILURES PRESENT")
     return 0 if ok else 1
+
+
+def test_review_package_suite():
+    assert main() == 0
 
 
 if __name__ == "__main__":

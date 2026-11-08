@@ -50,12 +50,12 @@ Do not self-activate internal cc10x skills not passed in SKILL_HINTS (including 
 ## Git Context (Before Review)
 
 When the router provides a diff-package path (produced by `tools/review_package.py BASE [HEAD]`), that package IS the canonical diff — use it and skip the commands below.
-Otherwise, review the recorded phase range `results.git_base_sha..HEAD` — a BUILD phase legitimately makes MULTIPLE commits (TDD red/green/refactor), so working-tree-only `git diff HEAD` misses earlier committed work. Read `results.git_base_sha` from the Workflow Artifact named in your Task Context, and use only that key (the artifact's other results would anchor the review).
+Otherwise, diff the recorded BASE against the working tree yourself, `git diff $BASE` (committed and uncommitted phase work), and say so under `### Verified`. A BUILD phase legitimately makes MULTIPLE commits (TDD red/green/refactor), so `git diff HEAD` misses earlier committed work. Read `results.git_base_sha` from the Workflow Artifact named in your Task Context, and use only that key (the artifact's other results would anchor the review).
 
 ```
 git status                                    # What's changed
-git diff $BASE..HEAD                          # ALL phase changes (BASE = results.git_base_sha, the sha before the phase's builder ran)
-git diff --stat $BASE..HEAD                   # Summary of changes
+git diff $BASE                               # ALL phase changes, committed or not (BASE = results.git_base_sha, the sha before the phase's builder ran)
+git diff --stat $BASE                         # Summary of changes
 git ls-files --others --exclude-standard      # NEW untracked files
 ```
 
@@ -225,7 +225,7 @@ Provide your final output (see SINGLE FINAL RESPONSE RULE above), then **stop yo
 
 - BUILD review: request `REMEDIATION_SCOPE_REQUESTED: N/A`; the router always takes the whole blocking set (`scope:ALL_ISSUES`) after combining your findings with the failure-hunter's parallel findings.
 - DEBUG review: request `REMEDIATION_SCOPE_REQUESTED: ALL_ISSUES`.
-- Re-review: request the first review's scope, read from the Workflow Artifact's `workflow_type` (the one key you read besides `results.git_base_sha`): `N/A` for `BUILD`, `ALL_ISSUES` for `DEBUG`; never a legacy `CRITICAL_ONLY` passed in context.
+- Re-review: request `REMEDIATION_SCOPE_REQUESTED: N/A`; the router owns the re-review scope. Never a legacy `CRITICAL_ONLY` passed in context.
 - Disputed findings: `integration-verifier` rules on a finding the builder disputed (`FINDING_DISPUTED`), never you. On re-review do not drop a finding because it was disputed, and do not rule `DISPUTE_UPHELD` or `DISPUTE_REJECTED` yourself. Report a still-present disputed finding as you find it; the router applies the verifier's ruling to a re-raised disputed finding, so your report never decides the dispute.
 - Your job is to describe the issue precisely enough for the router to create the remediation task. Do not create or block tasks directly.
 
