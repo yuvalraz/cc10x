@@ -302,12 +302,14 @@ BREAKER_FINISH = (
 )
 BREAKER_ASK = (
     "- When the count is 2 or more, ask the user before creating the next REM-FIX: `Run one more REM-FIX cycle` (asked"
-    " again before each further cycle) or `Stop here (Recommended)`. Outside QA the ask sets `pending_gate` to"
-    " `phase_blocked`, which `Run one more REM-FIX cycle` clears. `Stop here (Recommended)` persists state, stops with"
-    " nothing reverted, appends a `status_history` entry and never marks a passed phase blocked: in QA and in a BUILD with"
+    " again before each further cycle) or `Stop here (Recommended)`. Outside QA each ask sets `pending_gate` to"
+    " `phase_blocked` and appends `breaker_ask` to `status_history`, and `Run one more REM-FIX cycle` clears the gate."
+    " `Stop here (Recommended)` persists state, stops with nothing reverted, appends `breaker_stop` to `status_history`"
+    " and never marks a passed phase blocked: in QA and in a BUILD with"
     " a plan it sets `phase_status[phase_cursor]` to `blocked` unless that phase is already `completed` (as in the"
     " final-review wave or a fix after the last PASS), and otherwise leaves `phase_status` unchanged. In QA the workflow"
-    " continues only when a new request names it. Elsewhere Stop keeps `pending_gate` at `phase_blocked`, and the user's"
+    " continues only when a new request names it. Elsewhere Stop keeps `pending_gate` at `phase_blocked`, its stop"
+    " message tells the user to reply \"continue\" for one more REM-FIX cycle or \"end\" to end the workflow, and the user's"
     " next reply answers that gate: a reply asking to continue is `Run one more REM-FIX cycle` for the same block; an"
     " explicit stop or end reply ends the workflow: record the answer, persist any captured notes to the artifact"
     " `memory_notes`, run Memory Update inline, list each open `deferred_findings` entry in the stop message, then append"
@@ -326,8 +328,10 @@ ROUTER_TERMINAL_TEST = (
     " `workflow_completed` or `workflow_failed`, or its `phase_cursor` is `memory-finalize` and completed. Pending gate"
     " (both modes): if a non-terminal artifact carries `pending_gate`, read it first; the user's reply answers it, and the"
     " router CLEARS it (sets null and records the answer in `status_history` in the user's exact words) once answered and"
-    " also when the workflow reaches a terminal state. An answer that ends the workflow is recorded before its"
-    " `workflow_failed` entry, which stays the last `status_history` entry."
+    " also when the workflow reaches a terminal state. A gate's own rule may keep the gate after an answer: when"
+    " `pending_gate` is `phase_blocked` and the last `status_history` entry is `breaker_ask` or `breaker_stop`, the reply is answered by"
+    " `### Circuit breaker` in `references/remediation-and-research.md`. An answer that ends the workflow is recorded"
+    " before its `workflow_failed` entry, which stays the last `status_history` entry."
 )
 CHANGELOG_BREAKER = (
     "- **Per-phase circuit breaker.** The workflow-wide remediation count is gone. Each phase gets 2 REM-FIX cycles, and"
