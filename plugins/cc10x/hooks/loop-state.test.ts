@@ -863,3 +863,11 @@ test('ledger 13. a run step carries its event index, so two results of one agent
   expect(new Set(runs.map(s => s.index)).size).toBe(4)
   expect(ledger[0].steps.filter(s => s.kind === 'remfix').every(s => s.index === undefined)).toBe(true)
 })
+
+test('ledger 14. with no normalized_phases, phase_status keys no event names (a PLAN keyed by task phases) keep the one route row', () => {
+  const ledger = ledgerOf(PLAN_AT_GAP1, [], a => {
+    a.phase_status = { 'plan-create': 'completed', 'plan-review-gap-1': 'in_progress', 'memory-finalize': 'pending' }
+  })
+  expect(ledger.map(p => [p.id, p.isCursor])).toEqual([['PLAN', true]])
+  expect(ledger[0].steps).toHaveLength(2)
+})

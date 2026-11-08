@@ -219,7 +219,8 @@ export function deriveSteps(artifact: Artifact, events: LoopEvent[], spawns: Spa
 }
 
 // The ledger: one row per plan phase (or one route row), each holding its results and REM-FIX markers in event
-// order, plus the cursor row's live spawns. A result binds the latest earlier unbound spawn of its agent, phase and workflow.
+// order, plus the cursor row's live spawns. A result binds the latest earlier unbound spawn of its agent and workflow:
+// a spawn records the normalized cursor while results carry the raw phase_id, so phases never match on real artifacts.
 export function deriveLedger(artifact: Artifact, events: LoopEvent[], spawns: Spawn[]): LedgerPhase[] {
   const terminal = terminalOf(artifact, events)
   const finished = terminal !== null
@@ -229,11 +230,19 @@ export function deriveLedger(artifact: Artifact, events: LoopEvent[], spawns: Sp
     if (p.id === '' || rows.some(r => r.id === p.id)) continue
     rows.push({ id: p.id, status: p.status === 'in_progress' ? 'running' : p.status, rounds: 0, isCursor: false, steps: [] })
   }
+  // The router often writes normalized_phases [] and keeps plan phases only as phase_status keys; a key no event
+  // names is a task phase (plan-create, memory-finalize), never a row.
+  if (rows.length === 0) {
+    for (const [id, status] of Object.entries(obj(artifact.phase_status))) {
+      if (!events.some(e => e.phaseId === id)) continue
+      rows.push({ id, status: status === 'in_progress' ? 'running' : (str(status) ?? 'pending'), rounds: 0, isCursor: false, steps: [] })
+    }
+  }
   if (rows.length === 0) {
     rows.push({ id: str(artifact.workflow_type) || 'workflow', status: terminal === 'workflow_failed' ? 'failed' : finished ? 'completed' : 'running', rounds: 0, isCursor: false, steps: [] })
   }
   const cursor = cursorOf(artifact)
-  const home = rows.find(r => r.id === cursor) ?? rows[0]
+  const home = rows.find(r => r.id === cursor || r.id === artifact.phase_cursor) ?? rows[0]
   home.isCursor = true
   const rowOf = (phaseId: string) => rows.find(r => r.id === phaseId) ?? home
 
@@ -249,7 +258,7 @@ export function deriveLedger(artifact: Artifact, events: LoopEvent[], spawns: Sp
     if (e.event !== 'result_persisted') return
     let spawn: Spawn | undefined
     for (const s of spawns) {
-      const fits = wf !== '' && s.wf === wf && s.agent === e.agent && s.phaseId === e.phaseId && s.atIndex <= i && !bound.has(s)
+      const fits = wf !== '' && s.wf === wf && s.agent === e.agent && s.atIndex <= i && !bound.has(s)
       if (fits && (spawn === undefined || s.atIndex >= spawn.atIndex)) spawn = s
     }
     if (spawn !== undefined) bound.add(spawn)

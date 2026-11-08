@@ -341,6 +341,54 @@ test('ledger resume. a resumed agent is recorded again under its resume agentId,
   expect(runs?.map(s => [s.kind, s.agentId])).toEqual([['run', 'agent-1'], ['run', 'agent-1']])
 })
 
+// The shape the router writes on a phased BUILD (52cd1b8e, 2026-11-08): normalized_phases [], plan phases only as
+// phase_status keys, events tagged P1/P2 and then build-finish for the final-review wave.
+const SHAPE_WF = 'wf-20261108T122658Z-52cd1b8e'
+const shaped = (phases: unknown[], status: Record<string, string>, cursor: string, lines: [string, string, string, string, string][]): LoopFixture => ({
+  path: DIR + '/' + SHAPE_WF + '.json',
+  artifactText: JSON.stringify({ workflow_uuid: SHAPE_WF, workflow_id: SHAPE_WF, workflow_type: 'BUILD', normalized_phases: phases, phase_status: status, phase_cursor: cursor }),
+  eventsText: lines
+    .map(([event, phase, agent, decision, phaseId]) => JSON.stringify({ ts: '2026-11-08T12:26:58Z', wf: SHAPE_WF, event, phase, agent, decision, details: { phase_id: phaseId } }) + '\n')
+    .join(''),
+})
+
+test('ledger shape A. normalized_phases [] with phase_status P1, P2: rows P1 and P2, and a P2 result binds the agentId its spawn recorded', async ($, on) => {
+  const state = engine(on)
+  const opening: [string, string, string, string, string][] = [
+    ['workflow_started', 'build', 'router', 'start', 'N/A'],
+    ['phase_started', 'build', 'router', 'P1', 'P1'],
+    ['result_persisted', 'build-implement', 'component-builder', 'PASS', 'P1'],
+    ['phase_started', 'build', 'router', 'P2', 'P2'],
+  ]
+  const disk = answerFs(on, shaped([], { P1: 'completed', P2: 'in_progress' }, 'P2', opening))
+  await start($)
+  await $.agent.spawn(fromCc10x('cc10x:component-builder'))
+  disk.fixture = shaped([], { P1: 'completed', P2: 'in_progress' }, 'P2', [...opening, ['result_persisted', 'build-implement', 'component-builder', 'PASS', 'P2']])
+  await $.turn.complete(turnDone)
+
+  const rowsOf = state.loop?.live?.ledger
+  expect(rowsOf?.map(p => [p.id, p.status, p.isCursor])).toEqual([['P1', 'completed', false], ['P2', 'running', true]])
+  expect(rowsOf?.[1].steps.map(s => [s.kind, s.agentId])).toEqual([['run', 'agent-1']])
+})
+
+test('ledger shape B. a phased BUILD at cursor build-finish: the final-review result tagged build-finish binds its spawn', async ($, on) => {
+  const state = engine(on)
+  const opening: [string, string, string, string, string][] = [
+    ['workflow_started', 'build', 'router', 'start', 'N/A'],
+    ['phase_started', 'build', 'router', 'P1', 'P1'],
+    ['result_persisted', 'build-implement', 'component-builder', 'PASS', 'P1'],
+  ]
+  const status = { P1: 'completed', P2: 'completed' }
+  const disk = answerFs(on, shaped([{ id: 'P1' }, { id: 'P2' }], status, 'build-finish', opening))
+  await start($)
+  await $.agent.spawn(reviewer)
+  disk.fixture = shaped([{ id: 'P1' }, { id: 'P2' }], status, 'build-finish', [...opening, ['result_persisted', 'review', 'code-reviewer', 'APPROVE', 'build-finish']])
+  await $.turn.complete(turnDone)
+
+  const steps = state.loop?.live?.ledger.flatMap(p => p.steps).filter(s => s.agent === 'code-reviewer')
+  expect(steps?.map(s => [s.kind, s.decision, s.agentId])).toEqual([['run', 'APPROVE', 'agent-1']])
+})
+
 test('ledger last. a finished workflow\'s view.last carries type BUILD and its seven-row ledger', async ($, on) => {
   const state = engine(on)
   answerFs(on, FINISHED_BUILD)
