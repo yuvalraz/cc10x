@@ -35,7 +35,7 @@ PAYLOADS = [
     {"hook_event_name": "SessionStart", "source": "startup"},
 ]
 
-RUNTIME_TOOLS = ["phase_brief.py", "review_package.py", "live_harness_runner.py"]
+RUNTIME_TOOLS = ["phase_brief.py", "review_package.py", "live_harness_runner.py", "board_sync.py"]
 RUNTIME_SCRIPTS = ["cc10x_qa_topology.py"]
 
 
