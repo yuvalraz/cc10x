@@ -15,7 +15,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -34,16 +33,16 @@ def _list(value: Any) -> list:
     return value if isinstance(value, list) else []
 
 
-def _marker(entry: Any) -> str:
-    """A status_history entry's event: a dict's `event`, anything else as str()."""
-    return str(entry.get("event")) if isinstance(entry, dict) else str(entry)
+def _marker(entry: Any) -> str | None:
+    """A status_history entry's event: a dict's string `event`, or the entry when a string."""
+    return _str(entry.get("event")) if isinstance(entry, dict) else _str(entry)
 
 
 def snapshot(artifact: dict, events: list[dict]) -> dict:
     """Every IF-2 key except repo, branch, session_tag and synced_at."""
     phase_dicts = [p for p in _list(artifact.get("normalized_phases")) if isinstance(p, dict)]
-    ids = [p.get("phase_id") or p.get("id") for p in phase_dicts]
-    known = {i for i in ids if isinstance(i, str) and i}
+    ids = [_str(p.get("phase_id")) or _str(p.get("id")) for p in phase_dicts]
+    known = {i for i in ids if i}
     phase_status = artifact.get("phase_status")
 
     finish = [0, 0]  # history, events
@@ -75,7 +74,7 @@ def snapshot(artifact: dict, events: list[dict]) -> dict:
 
     phases = []
     for pid in ids:
-        status = phase_status.get(pid) if isinstance(phase_status, dict) and isinstance(pid, str) else None
+        status = _str(phase_status.get(pid)) if isinstance(phase_status, dict) and pid else None
         cycles = max(per_phase[pid]) if pid in per_phase else 0
         phases.append({"id": pid, "status": status, "fix_cycles": cycles})
 
@@ -91,7 +90,7 @@ def snapshot(artifact: dict, events: list[dict]) -> dict:
         bucket = severity.lower() if isinstance(severity, str) else "other"
         deferred[bucket if bucket in deferred else "other"] += 1
 
-    markers = {_marker(e) for e in history} | {str(e.get("event")) for e in events}
+    markers = {_marker(e) for e in history} | {_str(e.get("event")) for e in events}
     cursor = _str(artifact.get("phase_cursor"))
     finalized = cursor == "memory-finalize" and isinstance(phase_status, dict) and phase_status.get(cursor) == "completed"
     if "workflow_failed" in markers:
@@ -105,7 +104,7 @@ def snapshot(artifact: dict, events: list[dict]) -> dict:
 
     request = _str(artifact.get("user_request"))
     return {
-        "wf": artifact.get("workflow_uuid") or artifact.get("workflow_id") or None,
+        "wf": _str(artifact.get("workflow_uuid")) or _str(artifact.get("workflow_id")) or None,
         "type": _str(artifact.get("workflow_type")),
         "request": request[:160] if request is not None else None,
         "phases": phases,
@@ -155,6 +154,16 @@ def _branch(root: Path | None) -> str | None:
         return None
     out = r.stdout.strip()
     return out if r.returncode == 0 and out else None
+
+
+def _doc_path(value: str | None, root: Path | None) -> str | None:
+    """An absolute path goes out relative to the checkout root, else as its basename."""
+    if value is None or not os.path.isabs(value):
+        return value
+    try:
+        return str(Path(value).relative_to(root)) if root is not None else Path(value).name
+    except ValueError:
+        return Path(value).name
 
 
 def _is_on(capabilities: Any) -> bool:
@@ -218,10 +227,15 @@ def main(argv: list[str] | None = None) -> int:
         "branch": _branch(root),
         "session_tag": args.session_tag,
         **{k: v for k, v in snap.items() if k not in ("wf", "type")},
+        "plan_file": _doc_path(snap["plan_file"], root),
+        "design_file": _doc_path(snap["design_file"], root),
         "synced_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
     target = state / "board" / f"{wf}.json"
+    if any(c.isspace() for c in str(target)):
+        # BOARD_DOC is split on spaces, so such a path would be ambiguous
+        return _fail("snapshot path contains whitespace")
     try:
         previous = json.loads(target.read_text(encoding="utf-8"))
     except (OSError, ValueError, RecursionError):
@@ -234,12 +248,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=f".{wf}.", suffix=".tmp")
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(doc, fh, indent=2)
-            fh.write("\n")
+        tmp = target.parent / f".{wf}.tmp"  # one fixed name: a retry overwrites a failed write's leftover
+        tmp.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
         os.replace(tmp, target)
-    except OSError as exc:
+    except (OSError, ValueError, TypeError, RecursionError) as exc:
         return _fail(f"snapshot not written ({type(exc).__name__})")
     print(f"BOARD_DOC: builds {wf} {target}{_if_version(capabilities)}")
     return 0

@@ -267,6 +267,66 @@ def bad_artifact(tmp: Path) -> None:
     assert r.returncode == 1 and r.stdout == "" and r.stderr.startswith("board_sync: "), r
 
 
+def odd_shapes(tmp: Path) -> None:
+    # IF-1: odd artifact values never crash the tool; non-string ids and statuses become null.
+    deep = json.dumps(base_artifact(normalized_phases=[{"phase_id": "P1"}], phase_status={"P1": "DEEP"}))
+    cases = [
+        base_artifact(normalized_phases=[{"phase_id": ["P1"]}, {"id": {"x": 1}}, {"id": [1]}]),
+        deep.replace('"DEEP"', "[" * 995 + "]" * 995),  # raw text: the test never parses it itself
+    ]
+    for i, artifact in enumerate(cases):
+        sub = tmp / f"c{i}"
+        r = run_cli(sub, write_state(sub, artifact))
+        assert "Traceback" not in r.stderr, (i, r.stderr[-300:])
+        if r.returncode:  # an interpreter that cannot parse the nesting at all
+            assert r.stdout == "" and r.stderr.startswith("board_sync: ") and r.stderr.count("\n") == 1, (i, r)
+            continue
+        phases = load_snapshot(read_doc(r.stdout)[1])["phases"]
+        assert all(p["id"] is None or p["id"] == "P1" for p in phases), phases
+        assert all(p["status"] is None for p in phases), phases
+    # 1 then true: no non-string status reaches the snapshot, so the compare cannot conflate them
+    sub = tmp / "bool"
+    path = write_state(sub, base_artifact(phase_status={"P1": 1}))
+    snap = read_doc(run_cli(sub, path).stdout)[1]
+    assert load_snapshot(snap)["phases"][0]["status"] is None
+    write_state(sub, base_artifact(phase_status={"P1": True}))
+    run_cli(sub, path)
+    assert load_snapshot(snap)["phases"][0]["status"] is None
+
+
+def failed_write_tmp(tmp: Path) -> None:
+    # a failed write leaves one fixed temp name that the next try overwrites
+    path = write_state(tmp, base_artifact())
+    (board_dir(tmp) / f"{WF}.json").mkdir(parents=True)
+    for _ in range(2):
+        r = run_cli(tmp, path)
+        assert r.returncode == 1 and r.stdout == "" and r.stderr.startswith("board_sync: "), r
+        assert r.stderr.count("\n") == 1, repr(r.stderr)
+    leftovers = sorted(p.name for p in board_dir(tmp).iterdir() if p.name != f"{WF}.json")
+    assert leftovers in ([], [f".{WF}.tmp"]), leftovers
+
+
+def space_in_path(tmp: Path) -> None:
+    sub = tmp / "has space"
+    r = run_cli(sub, write_state(sub, base_artifact()))
+    assert r.returncode == 1 and r.stdout == "", r
+    assert r.stderr.startswith("board_sync: ") and r.stderr.count("\n") == 1, repr(r.stderr)
+    assert not board_dir(sub).exists()
+
+
+def relative_doc_paths(tmp: Path) -> None:
+    sub = tmp / "git"
+    (sub / "proj" / ".git").mkdir(parents=True)
+    inside = str(sub / "proj" / "docs" / "plans" / "p.md")
+    path = write_state(sub, base_artifact(plan_file=inside, design_file="/elsewhere/x/design.md"))
+    snap = load_snapshot(read_doc(run_cli(sub, path).stdout)[1])
+    assert (snap["plan_file"], snap["design_file"]) == ("docs/plans/p.md", "design.md"), snap
+    sub = tmp / "nogit"
+    path = write_state(sub, base_artifact(plan_file=str(sub / "proj" / "p.md"), design_file="docs/d.md"))
+    snap = load_snapshot(read_doc(run_cli(sub, path).stdout)[1])
+    assert (snap["plan_file"], snap["design_file"]) == ("p.md", "docs/d.md"), snap
+
+
 def no_git_repo(tmp: Path) -> None:
     path = write_state(tmp, base_artifact())
     snap = load_snapshot(read_doc(run_cli(tmp, path).stdout)[1])
@@ -339,6 +399,17 @@ def real_shape_counts(tmp: Path) -> None:
     assert (snap["fix_cycles"], snap["finish_fix_cycles"]) == (5, 0), snap
     snap = load_tool().snapshot(base_artifact(normalized_phases="nope", remediation_history="nope"), [])
     assert (snap["phases"], snap["fix_cycles"]) == ([], 0), snap
+    # non-string phase ids, statuses and markers: null, never a crash
+    odd = base_artifact(
+        normalized_phases=[{"phase_id": ["P1"]}, {"id": {"x": 1}}, {"id": [1]}, {"phase_id": "P1"}],
+        phase_status={"P1": [["x"]]},
+        status_history=[{"event": ["workflow_failed"]}, ["workflow_failed"]],
+    )
+    snap = load_tool().snapshot(odd, [{"event": ["workflow_failed"]}])
+    assert snap["phases"] == [{"id": None, "status": None, "fix_cycles": 0}] * 3 + [
+        {"id": "P1", "status": None, "fix_cycles": 0}
+    ], snap["phases"]
+    assert snap["status"] == "running", snap["status"]
 
 
 def finish_rounds(tmp: Path) -> None:
@@ -400,7 +471,8 @@ def request_truncated(tmp: Path) -> None:
 CASES = [
     check_on, check_off, check_rejected, off_writes_nothing, failed_push_off,
     pinned_url_on, artifact_untouched, events_path, pushed_line, snapshot_location,
-    if_version_token, unchanged_rules, fixtures_sweep, bad_artifact, no_git_repo,
+    if_version_token, unchanged_rules, fixtures_sweep, bad_artifact, odd_shapes,
+    failed_write_tmp, space_in_path, relative_doc_paths, no_git_repo,
     atomic_write, no_delete_path, help_runs, unit_keys, real_shape_counts,
     finish_rounds, breaker_states, status_states, deferred_buckets, request_truncated,
 ]
