@@ -341,8 +341,7 @@ CHANGELOG_BREAKER = (
     " (Recommended)`, under the `phase_blocked` gate outside QA; Stop persists state, reverts nothing and never blocks a"
     " passed phase, and outside QA a later continue reply runs one more cycle for the same block while an explicit end"
     " runs Memory Update, lists the open `deferred_findings` and records `workflow_failed` in `status_history` and the"
-    " events log. DEBUG, QA and a BUILD with no plan count as one phase, so they ask after 2 rounds. The loop pane's `rem`"
-    " count is per phase too, against 2. Replay `phase_cap_cases` in `multi-phase-resume-events.json` pin the count."
+    " events log. DEBUG, QA and a BUILD with no plan count as one phase, so they ask after 2 rounds. Replay `phase_cap_cases` in `multi-phase-resume-events.json` pin the count."
 )
 BREAKER_HISTORY = (
     "**Remediation history (MANDATORY — do not skip):** each remediation round appends exactly one entry to the workflow"

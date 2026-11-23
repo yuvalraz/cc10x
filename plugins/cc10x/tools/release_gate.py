@@ -41,7 +41,7 @@ STEP_TIMEOUT_S = 600
 def run(argv: list[str]) -> int:
     print("$ " + " ".join(argv), flush=True)
     try:
-        # Own session so a timeout kills the whole group: `uv run` and `claude plugin test` do their work in grandchildren.
+        # Own session so a timeout kills the whole group: `uv run` and `claude plugin validate` do their work in grandchildren.
         p = subprocess.Popen(argv, cwd=ROOT, start_new_session=True)
     except OSError as exc:
         print(f"FAIL: cannot execute {argv[0]}: {exc}", flush=True)

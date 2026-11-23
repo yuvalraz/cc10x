@@ -287,7 +287,7 @@ def process_group_checks(tmp: Path) -> None:
             child_gone = True
     check("the timed-out child is killed", child_gone, f"pid_file={pid_file.exists()}")
 
-    # a wrapper step (like `uv run` or `claude plugin test`) whose real work is a grandchild: the whole group dies
+    # a wrapper step (like `uv run` or `claude plugin validate`) whose real work is a grandchild: the whole group dies
     gc_pid_file = tmp / "grandchild_pid"
     grandchild = f"import os, time; open({str(gc_pid_file)!r}, 'w').write(str(os.getpid())); time.sleep(30)"
     wrapper = f"import subprocess, sys, time; subprocess.Popen([sys.executable, '-c', {grandchild!r}]); time.sleep(30)"
