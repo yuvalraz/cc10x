@@ -568,6 +568,43 @@ def workflow_artifact_is_fresh(path: Path, max_age_seconds: int = 60) -> bool:
     return age <= max_age_seconds
 
 
+# https only, printable ASCII, no spaces or control characters: always one line.
+_BOARD_URL = re.compile(r"https://[\x21-\x7e]+")
+
+
+def board_config() -> tuple[str | None, str | None]:
+    """The build board URL and why a configured value was rejected: (url, reason).
+
+    CC10X_BOARD_URL, when set, decides alone (empty = off). Otherwise
+    $HOME/.cc10x/board.json {"url": ...}; a missing file or no HOME = off.
+    The reason never contains the rejected value. Never raises."""
+
+    def check(value: Any, source: str) -> tuple[str | None, str | None]:
+        if not isinstance(value, str):
+            return None, f"{source}: url is not a string"
+        if len(value) > 2048 or not _BOARD_URL.fullmatch(value):
+            return None, f"{source}: url is not a printable https URL of at most 2048 characters"
+        return value, None
+
+    env = os.environ.get("CC10X_BOARD_URL")
+    if env is not None:
+        env = env.strip()
+        return check(env, "CC10X_BOARD_URL") if env else (None, None)
+    home = os.environ.get("HOME")
+    if not home:
+        return None, None
+    path = Path(home) / ".cc10x" / "board.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None, None
+    except (OSError, ValueError, RecursionError) as exc:
+        return None, f"~/.cc10x/board.json: unreadable ({type(exc).__name__})"
+    if not isinstance(data, dict):
+        return None, "~/.cc10x/board.json: not a JSON object"
+    return check(data.get("url"), "~/.cc10x/board.json")
+
+
 def json_print(payload: dict[str, Any]) -> None:
     print(json.dumps(payload, ensure_ascii=True))
 
