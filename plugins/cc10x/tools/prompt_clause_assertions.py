@@ -589,7 +589,7 @@ ROUTER_BOARD_CONFLICT = (
 )
 ROUTER_BOARD_FAILURE = (
     "- A board failure (board_sync exits non-zero or exits 0 with any other output, `ArtifactData` cannot be loaded, a"
-    " `set` or `get` result has no `version`, the `get` fails or finds no document, or the retried `set` fails) is recorded at once as `capabilities.board_push_failed` with a one-line reason, which"
+    " successful `set`, or a `get` that finds the document, returns no `version`, the `get` fails or finds no document, or the retried `set` fails) is recorded at once as `capabilities.board_push_failed` with a one-line reason, which"
     " turns the board off for that workflow; that artifact write changes only `capabilities` and `updated_at` and is"
     " allowed after `memory_finalized` or `workflow_failed`. The router also tells the user, in one line of its reply,"
     " that the board stopped updating for this workflow and why; that line is a reply only, with no `status_history`"
