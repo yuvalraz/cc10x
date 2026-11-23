@@ -31,7 +31,6 @@ EXPECTED_IDS = [
     "suite_review_package",
     "suite_token_usage_report",
     "plugin_validate",
-    "plugin_test",
 ]
 
 FAILURES = []
@@ -68,7 +67,7 @@ def main() -> int:
     r = cli("--list")
     check("--list exits 0", r.returncode == 0, f"rc={r.returncode} err={r.stderr.strip()}")
     check(
-        "--list prints exactly the ten step ids in order",
+        "--list prints exactly the nine step ids in order",
         r.stdout.split() == EXPECTED_IDS,
         repr(r.stdout),
     )
@@ -143,16 +142,15 @@ def main() -> int:
             ("b_ok", [sys.executable, "-c", "pass"]),
             ("pytest", None),
             ("plugin_validate", None),
-            ("plugin_test", None),
         )
         rc, out = run_main(
-            rg, "--only", "a_ok", "--only", "pytest", "--only", "plugin_validate", "--only", "plugin_test",
+            rg, "--only", "a_ok", "--only", "pytest", "--only", "plugin_validate",
             "--allow-no-pytest", "--allow-no-claude",
         )
         check(
             "skipped steps are named in the banner",
-            rc == 0 and "RELEASE GATE: OK (SKIPPED: pytest, plugin_validate, plugin_test; PARTIAL: 4 of 5 steps)" in out
-            and "SKIPPED plugin_test: claude not on PATH (--allow-no-claude)" in out,
+            rc == 0 and "RELEASE GATE: OK (SKIPPED: pytest, plugin_validate; PARTIAL: 3 of 4 steps)" in out
+            and "SKIPPED plugin_validate: claude not on PATH (--allow-no-claude)" in out,
             out,
         )
         rc, out = run_main(rg, "--only", "pytest", "--allow-no-pytest")
@@ -228,24 +226,6 @@ def main() -> int:
             f"rc={rc} {captured} {out}",
         )
 
-        # plugin_test: hermetic, which() and run() patched
-        rg.GATE_STEPS = (("plugin_test", None),)
-        captured.clear()
-        rc, out = run_main(rg, "--only", "plugin_test")
-        check(
-            "claude absent without --allow-no-claude: plugin_test FAILS, not skipped",
-            rc == 1 and not captured
-            and "FAIL plugin_test: claude not on PATH" in out
-            and "RELEASE GATE: FAIL (plugin_test)" in out,
-            f"rc={rc} {captured} {out}",
-        )
-        rg.shutil.which = lambda name, *a, **k: "/fake/claude" if name == "claude" else None
-        rc, out = run_main(rg, "--only", "plugin_test")
-        check(
-            "claude present: plugin_test runs exactly `claude plugin test plugins/cc10x`",
-            rc == 0 and captured == [["claude", "plugin", "test", "plugins/cc10x"]],
-            f"rc={rc} {captured} {out}",
-        )
         rg.shutil.which = lambda name, *a, **k: None
         rg.GATE_STEPS = (("prompt_clause_assertions", None),)
         captured.clear()

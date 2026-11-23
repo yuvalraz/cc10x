@@ -84,7 +84,7 @@ Run the gate from the repo root before any merge or release:
 python3 plugins/cc10x/tools/release_gate.py
 ```
 
-It runs these ten steps in order; `--list` prints the ids, `--only <step-id>` (repeatable) runs a subset, `--strict` is forwarded to `harness_audit` (it fails while the docs rot baseline is non-empty), and `--allow-no-pytest`, `--allow-no-yaml` and `--allow-no-claude` skip those steps loudly instead of failing:
+It runs these nine steps in order; `--list` prints the ids, `--only <step-id>` (repeatable) runs a subset, `--strict` is forwarded to `harness_audit` (it fails while the docs rot baseline is non-empty), and `--allow-no-pytest`, `--allow-no-yaml` and `--allow-no-claude` skip those steps loudly instead of failing:
 
 1. `harness_audit`: `python3 plugins/cc10x/tools/harness_audit.py`
 2. `doc_consistency_check`: `python3 plugins/cc10x/tools/doc_consistency_check.py`
@@ -95,7 +95,6 @@ It runs these ten steps in order; `--list` prints the ids, `--only <step-id>` (r
 7. `suite_review_package`: `python3 plugins/cc10x/scripts/test_cc10x_review_package.py`
 8. `suite_token_usage_report`: `python3 plugins/cc10x/scripts/test_cc10x_token_usage_report.py`
 9. `plugin_validate`: `claude plugin validate plugins/cc10x`
-10. `plugin_test`: `claude plugin test plugins/cc10x`
 
 Each step gets 600 seconds; a step that runs longer has its whole process group killed and fails as `FAIL <step-id>: timed out after 600 s`, and the gate moves on to the next step. A complete run ends with the plain line `RELEASE GATE: OK`. A banner with a `SKIPPED` or `PARTIAL` qualifier is not a release pass.
 

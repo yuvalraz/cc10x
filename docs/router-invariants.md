@@ -216,7 +216,6 @@ Validated against the live plugin surface:
 - `PostCompact`, `SubagentStop`, `StopFailure`, `InstructionsLoaded`: audit logging
 - `PreCompact`, `Stop`: workflow state snapshots
 
-The hooks module that `hooks.json` names under `modules` (the loop pane mod) is a read-only viewer of the workflow artifact and events log, never an orchestrator.
 **If removed:** Either runtime safety degrades, or hooks sprawl into a second orchestration system.
 **Safe to remove:** A hook may be removed when the CHANGELOG entry names the behavior that goes and what the user relies on instead, as `[Unreleased]` does for the four enforcing hooks.
 

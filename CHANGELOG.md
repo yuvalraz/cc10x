@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Loop pane removed
+
+- **Loop pane mod removed.** The above-prompt band, the `/cc10x-loop` pane and command, and the hooks module that drew them are gone: `hooks.json` loses `"modules"`, `plugin.json` loses `"types"`, and `register.tsx`, `loop-state.ts`, `loop-routes.ts`, `loop-fixtures.ts`, their tests, `types/index.d.ts` and `scripts/test_cc10x_loop_routes.py` are deleted. The release gate drops its `plugin_test` step (nine steps), since `claude plugin test` fails with no module to load. The settings hooks and the workflow artifact and events log under `.cc10x/workflows/` are unchanged; a live build board artifact fed from them replaces the pane.
+
 ### Tighter loops
 
 - **Plan phase tables.** Every phase of a PLAN-route plan now carries `#### Input space`, `#### Failure modes` and `#### Touched surfaces` (planner step 10, the planning skill's Task Structure, and an eleventh Plan Completeness Gate check). Input space may be the single line `N/A: <reason>` when the phase adds or changes no guard, parser, classifier or validator. plan-gap-reviewer and plan-review-gate report a missing or incomplete table as a BLOCKING `missing_surfaces` finding; the `FINDING_BUCKETS` contract keeps its six keys. A planning-template placeholder left in a table (outside backticks in a row, in a `Sweep:` line, or as a bare `<reason>`) is BLOCKING; bracketed text inside backticks is content. `direct`-mode plans and QA-route plans are exempt. The BUILD handoff passes the phase's tables to the builder. `plan_trust_gate` does not check them, so a plan saved before phase tables existed still builds.

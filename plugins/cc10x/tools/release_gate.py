@@ -20,7 +20,7 @@ SCRIPT_STYLE_SUITES = (
 )
 
 # Python steps use sys.executable so the gate exercises the interpreter that invoked it.
-# argv None means the step has a dedicated resolver (prompt_clause_assertions, pytest, plugin_validate, plugin_test).
+# argv None means the step has a dedicated resolver (prompt_clause_assertions, pytest, plugin_validate).
 GATE_STEPS = (
     ("harness_audit", [sys.executable, f"{TOOLS}/harness_audit.py"]),
     ("doc_consistency_check", [sys.executable, f"{TOOLS}/doc_consistency_check.py"]),
@@ -31,7 +31,6 @@ GATE_STEPS = (
     ("suite_review_package", [sys.executable, f"{SCRIPTS}/{SCRIPT_STYLE_SUITES[1]}"]),
     ("suite_token_usage_report", [sys.executable, f"{SCRIPTS}/{SCRIPT_STYLE_SUITES[2]}"]),
     ("plugin_validate", None),
-    ("plugin_test", None),
 )
 
 
@@ -126,17 +125,6 @@ def run_plugin_validate(allow_missing: bool) -> int:
     return 1
 
 
-def run_plugin_test(allow_missing: bool) -> int:
-    # claude plugin test exits 1 on a failing test, a load error, or no modules key, so its exit code is the verdict.
-    if shutil.which("claude"):
-        return run(["claude", "plugin", "test", "plugins/cc10x"])
-    if allow_missing:
-        print("SKIPPED plugin_test: claude not on PATH (--allow-no-claude)", flush=True)
-        return SKIPPED_RC
-    print("FAIL plugin_test: claude not on PATH (use --allow-no-claude to skip)", flush=True)
-    return 1
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="cc10x release gate runner")
     parser.add_argument("--list", action="store_true", help="print step ids and exit")
@@ -183,8 +171,6 @@ def run_gate(args: argparse.Namespace) -> int:
             rc = run_pytest(args.allow_no_pytest)
         elif step_id == "plugin_validate":
             rc = run_plugin_validate(args.allow_no_claude)
-        elif step_id == "plugin_test":
-            rc = run_plugin_test(args.allow_no_claude)
         else:
             # harness_audit parses --strict itself: it fails while the docs-rot baseline is non-empty.
             rc = run(cmd + (["--strict"] if args.strict and step_id == "harness_audit" else []))
