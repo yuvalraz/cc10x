@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cc10x builds</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f6f5f1;
+  --surface: #ffffff;
+  --surface-2: #efede6;
+  --text: #1c1d1f;
+  --muted: #5d6066;
+  --line: #d9d6cc;
+  --phase-empty: #e3e0d6;
+  --phase-done: #2f6f5e;
+  --run: #1f5fae;
+  --run-bg: #e3edf9;
+  --wait: #8a5a00;
+  --wait-bg: #fbefd6;
+  --done: #2f6f5e;
+  --done-bg: #e0f0ea;
+  --fail: #a8322a;
+  --fail-bg: #f8e2df;
+  --focus: #1f5fae;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16171a;
+    --surface: #1e2024;
+    --surface-2: #26282d;
+    --text: #e8e6e1;
+    --muted: #a3a5ab;
+    --line: #34363c;
+    --phase-empty: #34363c;
+    --phase-done: #5fbf9f;
+    --run: #8db8f0;
+    --run-bg: #1d2b3f;
+    --wait: #f0c069;
+    --wait-bg: #3a2f17;
+    --done: #5fbf9f;
+    --done-bg: #183028;
+    --fail: #f0948b;
+    --fail-bg: #3d1f1c;
+    --focus: #8db8f0;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16171a;
+  --surface: #1e2024;
+  --surface-2: #26282d;
+  --text: #e8e6e1;
+  --muted: #a3a5ab;
+  --line: #34363c;
+  --phase-empty: #34363c;
+  --phase-done: #5fbf9f;
+  --run: #8db8f0;
+  --run-bg: #1d2b3f;
+  --wait: #f0c069;
+  --wait-bg: #3a2f17;
+  --done: #5fbf9f;
+  --done-bg: #183028;
+  --fail: #f0948b;
+  --fail-bg: #3d1f1c;
+  --focus: #8db8f0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 24px 16px 32px;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.45 var(--sans);
+}
+main { max-width: 960px; margin: 0 auto; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 16px; }
+h1 { margin: 0; font: 600 20px/1.2 var(--mono); letter-spacing: -0.01em; }
+.note { color: var(--muted); font-size: 13px; }
+[role="tablist"] { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+[role="tab"] {
+  appearance: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: 500 14px/1 var(--sans);
+  padding: 10px 12px;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+[role="tab"][aria-selected="true"] { color: var(--text); border-bottom-color: var(--text); }
+button:focus-visible, summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.state { padding: 32px 16px; text-align: center; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.state strong { display: block; color: var(--text); font: 600 15px/1.4 var(--mono); margin-bottom: 4px; }
+ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.row { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+summary { list-style: none; cursor: pointer; padding: 12px 14px; display: grid; gap: 8px; }
+summary::-webkit-details-marker { display: none; }
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.where { font: 600 14px/1.3 var(--mono); overflow-wrap: anywhere; min-width: 0; flex: 1 1 200px; }
+.where .branch { color: var(--muted); font-weight: 400; }
+.meta { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); font-size: 13px; }
+.meta b { color: var(--text); font-weight: 500; font-family: var(--mono); font-size: 12.5px; }
+.status {
+  font: 600 11.5px/1 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 5px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.status.running { color: var(--run); background: var(--run-bg); }
+.status.waiting { color: var(--wait); background: var(--wait-bg); }
+.status.done { color: var(--done); background: var(--done-bg); }
+.status.failed { color: var(--fail); background: var(--fail-bg); }
+.status.other { color: var(--muted); background: var(--surface-2); }
+.flag { font: 600 12px/1 var(--mono); padding: 5px 8px; border-radius: 4px; border: 1px solid currentColor; white-space: nowrap; }
+.flag.gate { color: var(--wait); }
+.flag.breaker { color: var(--fail); }
+.strip { display: flex; flex-wrap: wrap; gap: 3px; }
+.strip span { width: 18px; height: 8px; border-radius: 2px; background: var(--phase-empty); }
+.strip span.completed { background: var(--phase-done); }
+.drill { border-top: 1px solid var(--line); padding: 10px 14px 14px; display: grid; gap: 10px; font-size: 13px; }
+.drill dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; }
+.drill dt { color: var(--muted); }
+.drill dd { margin: 0; font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
+.drill table { border-collapse: collapse; font-family: var(--mono); font-size: 12.5px; }
+.drill th, .drill td { text-align: left; padding: 3px 14px 3px 0; border-bottom: 1px solid var(--line); }
+.drill th { color: var(--muted); font-weight: 500; font-family: var(--sans); }
+footer { margin-top: 20px; color: var(--muted); font-size: 12.5px; text-align: center; }
+@media (prefers-reduced-motion: no-preference) {
+  [role="tab"] { transition: color 150ms ease, border-color 150ms ease; }
+  .status.running::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: currentColor; vertical-align: 1px; animation: pulse 1.6s ease-in-out infinite; }
+}
+@keyframes pulse { 50% { opacity: 0.25; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>cc10x builds</h1>
+    <span class="note" id="mode-note"></span>
+  </header>
+  <div role="tablist" aria-label="Workflows">
+    <button type="button" role="tab" id="tab-active" aria-controls="panel" aria-selected="true">Active</button>
+    <button type="button" role="tab" id="tab-history" aria-controls="panel" aria-selected="false">History</button>
+  </div>
+  <section id="panel" role="tabpanel" aria-live="polite">
+    <div class="state"><strong>loading builds</strong>waiting for the board</div>
+  </section>
+  <footer>showing the 500 most recently updated workflows</footer>
+</main>
+
+<script type="application/json" id="demo-data">
+[
+  {
+    "wf": "wf-20261123T100346Z-245172e6", "type": "BUILD", "repo": "cc10x", "branch": "feat/build-board-p3",
+    "session_tag": "board", "request": "Live build board v1: the read-only board page <b>with demo mode</b>",
+    "phases": [
+      {"id": "P0", "status": "completed", "fix_cycles": 0},
+      {"id": "P1", "status": "completed", "fix_cycles": 1},
+      {"id": "P2", "status": "in_progress", "fix_cycles": 0},
+      {"id": "P3", "status": "pending", "fix_cycles": 0},
+      {"id": "P4", "status": "pending", "fix_cycles": 0}
+    ],
+    "fix_cycles": 1, "finish_fix_cycles": 0, "cursor": "P2 build-implement", "pending_gate": null, "breaker": null,
+    "deferred": {"medium": 1, "low": 2, "minor": 0, "other": 0},
+    "plan_file": "docs/plans/2026-11-23-build-board-plan.md", "design_file": "docs/plans/2026-11-23-build-board-design.md",
+    "status": "running", "created_at": "2026-11-23T10:03:46Z", "updated_at": "2026-11-23T11:41:02Z", "synced_at": "2026-11-23T11:41:05Z"
+  },
+  {
+    "wf": "wf-20261123T081210Z-9c1d02aa", "type": "PLAN", "repo": "backend", "branch": "feat/claims-gist-w3",
+    "session_tag": null, "request": "Plan the claims gist W3 slice",
+    "phases": [],
+    "fix_cycles": 0, "finish_fix_cycles": 0, "cursor": "plan-review", "pending_gate": "plan_approval", "breaker": null,
+    "deferred": {"medium": 0, "low": 0, "minor": 0, "other": 0},
+    "plan_file": "docs/plans/2026-11-23-claims-gist-w3-plan.md", "design_file": null,
+    "status": "waiting", "created_at": "2026-11-23T08:12:10Z", "updated_at": "2026-11-23T09:02:44Z", "synced_at": "2026-11-23T09:02:47Z"
+  },
+  {
+    "wf": "wf-20261122T151500Z-4e7f9b10", "type": "DEBUG", "repo": "platform", "branch": "fix/overview-allowlist",
+    "session_tag": "ops", "request": "Overview POST rejects the golden LOB",
+    "phases": [
+      {"id": "D1", "status": "completed", "fix_cycles": 0},
+      {"id": "D2", "status": "in_progress", "fix_cycles": 3}
+    ],
+    "fix_cycles": 3, "finish_fix_cycles": 1, "cursor": "D2 remediation", "pending_gate": null, "breaker": "ask",
+    "deferred": {"medium": 0, "low": 1, "minor": 0, "other": 0},
+    "plan_file": null, "design_file": null,
+    "status": "waiting", "created_at": "2026-11-22T15:15:00Z", "updated_at": "2026-11-22T17:48:31Z", "synced_at": "2026-11-22T17:48:33Z"
+  },
+  {
+    "wf": "wf-20261121T093000Z-0b8d55c1", "type": "BUILD", "repo": "clutch", "branch": "feat/armed-watch-d1",
+    "session_tag": null, "request": "Armed watch slice D1",
+    "phases": [
+      {"id": "P1", "status": "completed", "fix_cycles": 0},
+      {"id": "P2", "status": "completed", "fix_cycles": 2},
+      {"id": "P3", "status": "completed", "fix_cycles": 0}
+    ],
+    "fix_cycles": 2, "finish_fix_cycles": 1, "cursor": null, "pending_gate": null, "breaker": null,
+    "deferred": {"medium": 2, "low": 3, "minor": 1, "other": 0},
+    "plan_file": "docs/plans/2026-11-21-armed-watch-d1-plan.md", "design_file": null,
+    "status": "done", "created_at": "2026-11-21T09:30:00Z", "updated_at": "2026-11-21T12:07:19Z", "synced_at": "2026-11-21T12:07:20Z"
+  },
+  {
+    "wf": "wf-20261120T140000Z-77aa0e3f", "type": "BUILD", "repo": "backend", "branch": "feat/v3-seed",
+    "session_tag": null, "request": "V3 topic seed tool",
+    "phases": [
+      {"id": "P1", "status": "completed", "fix_cycles": 1},
+      {"id": "P2", "status": "failed", "fix_cycles": 3}
+    ],
+    "fix_cycles": 4, "finish_fix_cycles": 0, "cursor": "P2 build-implement", "pending_gate": null, "breaker": "stop",
+    "deferred": {"medium": 0, "low": 0, "minor": 0, "other": 0},
+    "plan_file": "docs/plans/2026-11-20-v3-seed-plan.md", "design_file": null,
+    "status": "failed", "created_at": "2026-11-20T14:00:00Z", "updated_at": "2026-11-20T15:31:40Z", "synced_at": "2026-11-20T15:31:41Z"
+  },
+  {
+    "wf": "wf-20261119T000000Z-sparse01", "type": null, "repo": null, "branch": null,
+    "session_tag": null, "request": null,
+    "phases": [],
+    "fix_cycles": 0, "finish_fix_cycles": 0, "cursor": null, "pending_gate": null, "breaker": null,
+    "deferred": {"medium": 0, "low": 0, "minor": 0, "other": 0},
+    "plan_file": null, "design_file": null,
+    "status": "running", "created_at": null, "updated_at": null, "synced_at": null
+  }
+]
+</script>
+
+<script>
+"use strict";
+(function () {
+  const ACTIVE = new Set(["running", "waiting"]);
+  const STATUSES = new Set(["running", "waiting", "done", "failed"]);
+  const panel = document.getElementById("panel");
+  const tabs = {
+    active: document.getElementById("tab-active"),
+    history: document.getElementById("tab-history"),
+  };
+  let current = "active";
+  let docs = null; // null until the first delivery
+
+  function el(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+  }
+  function str(v) { return typeof v === "string" ? v : ""; }
+  function num(v) { return typeof v === "number" && isFinite(v) ? v : 0; }
+  function list(v) { return Array.isArray(v) ? v : []; }
+
+  function showState(title, detail) {
+    const box = el("div", "state");
+    box.append(el("strong", null, title), document.createTextNode(detail || ""));
+    panel.replaceChildren(box);
+  }
+  function unavailable() {
+    if (docs === null) showState("board unavailable", "the builds database cannot be reached from this view");
+  }
+
+  function duration(doc) {
+    const a = Date.parse(str(doc.created_at));
+    const b = Date.parse(str(doc.updated_at));
+    if (isNaN(a) || isNaN(b) || b < a) return "";
+    const s = Math.round((b - a) / 1000);
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    if (h) return h + "h " + String(m).padStart(2, "0") + "m";
+    if (m) return m + "m";
+    return s + "s";
+  }
+
+  function statusLabel(status) {
+    const s = str(status);
+    return el("span", "status " + (STATUSES.has(s) ? s : "other"), s || "unknown");
+  }
+
+  function metaItem(label, value) {
+    const span = el("span", null, label + " ");
+    span.append(el("b", null, value));
+    return span;
+  }
+
+  function strip(phases) {
+    const box = el("div", "strip");
+    const done = phases.filter((p) => p && p.status === "completed").length;
+    box.setAttribute("role", "img");
+    box.setAttribute("aria-label", done + " of " + phases.length + " phases completed");
+    for (const p of phases) {
+      const cell = el("span", p && p.status === "completed" ? "completed" : "");
+      cell.title = str(p && p.id) + ": " + str(p && p.status);
+      box.append(cell);
+    }
+    return box;
+  }
+
+  function drill(doc) {
+    const box = el("div", "drill");
+    const dl = el("dl");
+    const d = doc.deferred && typeof doc.deferred === "object" ? doc.deferred : {};
+    const fields = [
+      ["workflow", str(doc.wf)],
+      ["request", str(doc.request)],
+      ["session", str(doc.session_tag)],
+      ["plan", str(doc.plan_file)],
+      ["design", str(doc.design_file)],
+      ["deferred", "medium " + num(d.medium) + ", low " + num(d.low) + ", minor " + num(d.minor) + ", other " + num(d.other)],
+      ["created", str(doc.created_at)],
+      ["updated", str(doc.updated_at)],
+    ];
+    for (const [k, v] of fields) dl.append(el("dt", null, k), el("dd", null, v));
+    box.append(dl);
+    const phases = list(doc.phases);
+    if (phases.length) {
+      const table = el("table");
+      const head = el("tr");
+      head.append(el("th", null, "phase"), el("th", null, "status"), el("th", null, "fix cycles"));
+      table.append(head);
+      for (const p of phases) {
+        const tr = el("tr");
+        tr.append(el("td", null, str(p && p.id)), el("td", null, str(p && p.status)), el("td", null, num(p && p.fix_cycles)));
+        table.append(tr);
+      }
+      box.append(table);
+    }
+    return box;
+  }
+
+  function row(doc, active) {
+    const li = el("li", "row");
+    const details = el("details");
+    const summary = el("summary");
+    const top = el("div", "top");
+    const where = el("span", "where");
+    const phases = list(doc.phases);
+    if (active) {
+      where.append(document.createTextNode(str(doc.repo)));
+      if (str(doc.branch)) where.append(el("span", "branch", " " + str(doc.branch)));
+    } else {
+      where.textContent = str(doc.wf);
+    }
+    top.append(where);
+    if (active && str(doc.pending_gate)) top.append(el("span", "flag gate", "gate: " + str(doc.pending_gate)));
+    if (str(doc.breaker)) top.append(el("span", "flag breaker", "breaker " + str(doc.breaker)));
+    top.append(statusLabel(doc.status));
+    summary.append(top);
+
+    const meta = el("div", "meta");
+    if (active) {
+      meta.append(metaItem("type", str(doc.type)), metaItem("at", str(doc.cursor)), metaItem("fix cycles", num(doc.fix_cycles)));
+      if (num(doc.finish_fix_cycles) > 0) meta.append(metaItem("finish fix cycles", num(doc.finish_fix_cycles)));
+      summary.append(meta);
+      if (phases.length) summary.append(strip(phases));
+    } else {
+      const d = doc.deferred && typeof doc.deferred === "object" ? doc.deferred : {};
+      meta.append(
+        metaItem("repo", str(doc.repo)),
+        metaItem("type", str(doc.type)),
+        metaItem("phases", phases.length),
+        metaItem("fix cycles", num(doc.fix_cycles)),
+        metaItem("finish fix cycles", num(doc.finish_fix_cycles)),
+        metaItem("deferred medium", num(d.medium)),
+        metaItem("low", num(d.low)),
+        metaItem("took", duration(doc)),
+      );
+      summary.append(meta);
+    }
+    details.append(summary, drill(doc));
+    li.append(details);
+    return li;
+  }
+
+  function render() {
+    for (const [name, tab] of Object.entries(tabs)) tab.setAttribute("aria-selected", String(name === current));
+    if (docs === null) return;
+    const activeDocs = docs.filter((d) => ACTIVE.has(d.status));
+    const historyDocs = docs.filter((d) => !ACTIVE.has(d.status));
+    tabs.active.textContent = "Active (" + activeDocs.length + ")";
+    tabs.history.textContent = "History (" + historyDocs.length + ")";
+    if (!docs.length) return showState("no cc10x workflows yet", "workflows appear here once the router pushes them");
+    const shown = current === "active" ? activeDocs : historyDocs;
+    if (!shown.length) return showState(current === "active" ? "no active workflows" : "no finished workflows", "");
+    const ul = el("ul", "rows");
+    for (const d of shown) ul.append(row(d, current === "active"));
+    panel.replaceChildren(ul);
+  }
+
+  function setDocs(next) {
+    docs = next.filter((d) => d && typeof d === "object");
+    render();
+  }
+
+  for (const [name, tab] of Object.entries(tabs)) {
+    tab.addEventListener("click", () => { current = name; render(); });
+  }
+
+  async function start() {
+    if (location.hash === "#demo") {
+      document.getElementById("mode-note").textContent = "demo data";
+      setDocs(JSON.parse(document.getElementById("demo-data").textContent));
+      return;
+    }
+    const timer = setTimeout(unavailable, 10000);
+    let db = null;
+    try {
+      db = window.claude && typeof window.claude.use === "function" ? await window.claude.use("db") : null;
+    } catch (e) {
+      db = null;
+    }
+    if (!db) {
+      clearTimeout(timer);
+      return unavailable();
+    }
+    db.collection("builds").orderBy("updated_at", "desc").limit(500).onSnapshot(
+      (snap) => {
+        clearTimeout(timer);
+        setDocs(snap.docs.map((s) => Object.assign({ wf: s.id }, s.data())));
+      },
+      () => {
+        // Any terminal error (resource_exhausted, quota_exceeded, revoked, ...) ends the listener.
+        clearTimeout(timer);
+        docs = null;
+        unavailable();
+      },
+    );
+  }
+
+  render();
+  start();
+})();
+</script>
+</body>
+</html>
