@@ -558,7 +558,8 @@ README_PAUSE_LINE = "- when to pause for clarification"
 # Build board law (SKILL.md §2a) and its capabilities policy lines (plan P2, IF-3/IF-4, DD8/DD9/DD13).
 ROUTER_BOARD_HEADING = "### Build board (optional)"
 ROUTER_BOARD_OFF = (
-    "- The build board is on for a workflow when its artifact holds no `capabilities.board_push_failed` and either its"
+    "- The build board is on for a workflow when its artifact's `capabilities.board_push_failed` is not a non-empty string"
+    " and either its"
     " `capabilities.board_url` is a non-empty string or the session context holds a `CC10X build board: <url>` line (the"
     " SessionStart hook prints it only when `~/.cc10x/board.json` or `CC10X_BOARD_URL` names a valid `https://` board URL);"
     " otherwise it is off, and the router runs no board command, makes no `ArtifactData` call and writes no board file."
@@ -587,10 +588,12 @@ ROUTER_BOARD_CONFLICT = (
     " once with `if_version` set to its `version`."
 )
 ROUTER_BOARD_FAILURE = (
-    "- A board failure (board_sync exits non-zero, `ArtifactData` cannot be loaded, the `get` fails or finds no document,"
-    " or the retried `set` fails) is recorded at once as `capabilities.board_push_failed` with a one-line reason, which"
+    "- A board failure (board_sync exits non-zero or exits 0 with any other output, `ArtifactData` cannot be loaded, a"
+    " `set` or `get` result has no `version`, the `get` fails or finds no document, or the retried `set` fails) is recorded at once as `capabilities.board_push_failed` with a one-line reason, which"
     " turns the board off for that workflow; that artifact write changes only `capabilities` and `updated_at` and is"
-    " allowed after `memory_finalized` or `workflow_failed`. No board step appends anything to `status_history` or the"
+    " allowed after `memory_finalized` or `workflow_failed`. The router also tells the user, in one line of its reply,"
+    " that the board stopped updating for this workflow and why; that line is a reply only, with no `status_history`"
+    " entry, gate or question. No board step appends anything to `status_history` or the"
     " events log, a board failure never blocks or fails a workflow, and the router never deletes a board document."
 )
 POLICY_BOARD_URL = (
@@ -605,7 +608,8 @@ POLICY_BOARD_VERSION = (
 POLICY_BOARD_FAILED = (
     "  - `board_push_failed` (optional): a one-line reason the build board failed for this workflow, written at once in an"
     " artifact write that changes only `capabilities` and `updated_at` (also after `memory_finalized` or"
-    " `workflow_failed`); set means the board is off for it; a board failure is never written to `status_history` or the"
+    " `workflow_failed`) and named to the user in one line of the router's reply; a non-empty string means the board is"
+    " off for it; a board failure is never written to `status_history` or the"
     " events log"
 )
 INV005_HEADING = "### INV-005: Every BUILD REM-FIX takes the whole blocking set"

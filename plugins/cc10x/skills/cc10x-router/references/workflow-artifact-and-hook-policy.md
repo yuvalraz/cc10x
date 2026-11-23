@@ -84,7 +84,7 @@ Rules:
   - `webfetch_available`
   - `board_url` (optional): the build board URL this workflow pushes to, set before its first push and kept for the workflow's life (`SKILL.md` §2a `### Build board (optional)`); absent, null or not a non-empty string means none recorded yet
   - `board_version` (optional): the `version` of this workflow's board document after the last successful `set`; absent means none recorded, and the router's conflict recovery finds it
-  - `board_push_failed` (optional): a one-line reason the build board failed for this workflow, written at once in an artifact write that changes only `capabilities` and `updated_at` (also after `memory_finalized` or `workflow_failed`); set means the board is off for it; a board failure is never written to `status_history` or the events log
+  - `board_push_failed` (optional): a one-line reason the build board failed for this workflow, written at once in an artifact write that changes only `capabilities` and `updated_at` (also after `memory_finalized` or `workflow_failed`) and named to the user in one line of the router's reply; a non-empty string means the board is off for it; a board failure is never written to `status_history` or the events log
 - `results.research` must be structured as `web`, `github`, and `synthesis`.
 - `results.disputes_in_flight` is the router-written list of disputed REM-FIX findings, one `{cycle_number, position, finding, ruling}` entry per `FINDING_DISPUTED` position, `ruling` null until the verifier adjudicates it (`remediation-and-research.md`, Re-review precondition gate).
 - `intent` stores the durable spec header for the workflow:
