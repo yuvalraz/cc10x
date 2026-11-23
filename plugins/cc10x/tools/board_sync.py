@@ -27,8 +27,8 @@ FINISH_PHASE = "build-finish"
 
 # IF-3 ticket rule, defined identically in clutch tools/ops_sync/ops_sync.py.
 SLUG_RE = re.compile(r"(?<![A-Za-z0-9])([A-Za-z]{2,6})-([0-9]{1,6})(?![A-Za-z0-9])")
-TEXT_RE = re.compile(r"(?<![A-Za-z0-9])([A-Z]{2,6})-([0-9]{1,6})(?![A-Za-z0-9])")
-NOT_TICKETS = ("CVE", "GPT", "HTTP", "ISO", "PEP", "RFC", "SHA", "UTF")
+TEXT_RE = re.compile(r"(?<![A-Za-z0-9-])([A-Z]{2,6})-([0-9]{1,6})(?![A-Za-z0-9])")
+NOT_TICKETS = ("CVE", "GPT", "HTTP", "IF", "ISO", "OD", "PEP", "RFC", "RP", "SHA", "UTF")
 
 
 def _str(value: Any) -> str | None:

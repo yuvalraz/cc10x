@@ -428,6 +428,8 @@ TICKET_VECTORS = [
     ("V8", ["claude/zen-bassi-1a2b"], ["build2ENG-12 and ENG-1234567"], None),
     ("V9", [], ["(ENG-42)."], "ENG-42"),
     ("V10", [], [], None),
+    ("V11", [], ["P-ENG-301 then ENG-1925"], "ENG-1925"),
+    ("V12", [], ["OD-1 kept; ENG-1781"], "ENG-1781"),
 ]
 
 
