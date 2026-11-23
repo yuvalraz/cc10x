@@ -43,11 +43,60 @@ REQUIRED_TEXT = (
     "prefers-color-scheme: dark",
     "prefers-reduced-motion",
     'location.hash === "#demo"',
+    "setTimeout(stale, 10000)",
+    "metadata.fromCache",
+    "may be out of date",
+    'role="status"',
+    "aria-labelledby",
+    "ArrowLeft:",
+    "ArrowRight:",
+    "Home:",
+    "End:",
 )
 FORBIDDEN_TEXT = (
     "innerHTML", "outerHTML", "insertAdjacentHTML", "document.write",
-    ".set(", ".update(", ".delete(", "<script src", "<link", "claude.db",
+    ".set(", ".update(", ".delete(", ".add(", ".acquire(",
+    "<script src", "<link", "claude.db", "data-theme",
 )
+
+
+def call_args(text: str, name: str) -> list[list[str]]:
+    """Top-level argument texts of every `name(` call, found by bracket depth (strings and comments ignored)."""
+    calls = []
+    for m in re.finditer(re.escape(name) + r"\(", text):
+        depth, args, cur, i, quote = 1, [], "", m.end(), None
+        while i < len(text) and depth:
+            c = text[i]
+            if quote:
+                if c == "\\":
+                    cur += c
+                    i += 1
+                    c = text[i]
+                elif c == quote:
+                    quote = None
+            elif text.startswith("//", i):
+                i = text.find("\n", i) % (len(text) + 1)
+                continue
+            elif text.startswith("/*", i):
+                i = text.find("*/", i) % (len(text) + 1) + 2
+                continue
+            elif c in "\"'`":
+                quote = c
+            elif c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+            elif c == "," and depth == 1:
+                args.append(cur)
+                cur = ""
+                i += 1
+                continue
+            if depth:
+                cur += c
+            i += 1
+        args.append(cur)
+        calls.append([a.strip() for a in args if a.strip()])
+    return calls
 
 
 def is_sparse(doc: dict) -> bool:
@@ -71,8 +120,12 @@ def page_static(path: Path) -> list[str]:
     errors += [f"missing: {t}" for t in REQUIRED_TEXT if t not in text]
     errors += [f"forbidden: {t}" for t in FORBIDDEN_TEXT if t in text]
     # Every onSnapshot call passes an error callback, so a terminal error is shown, not swallowed.
-    if re.search(r"onSnapshot\(\s*[A-Za-z_$][\w$]*\s*\)", text):
+    snaps = call_args(text, "onSnapshot")
+    if not snaps or any(len(a) < 2 for a in snaps):
         errors.append("onSnapshot without an error callback")
+    # The panel is rebuilt on every snapshot; a live region there would re-read the whole list.
+    if re.search(r'<section id="panel"[^>]*aria-live', text):
+        errors.append("panel is an aria-live region")
     m = re.search(r'<script type="application/json" id="demo-data">(.*?)</script>', text, re.S)
     if not m:
         return errors + ["demo-data block missing"]

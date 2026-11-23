@@ -28,7 +28,7 @@
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", sans-serif;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root {
     --bg: #16171a;
     --surface: #1e2024;
     --surface-2: #26282d;
@@ -47,25 +47,6 @@
     --fail-bg: #3d1f1c;
     --focus: #8db8f0;
   }
-}
-:root[data-theme="dark"] {
-  --bg: #16171a;
-  --surface: #1e2024;
-  --surface-2: #26282d;
-  --text: #e8e6e1;
-  --muted: #a3a5ab;
-  --line: #34363c;
-  --phase-empty: #34363c;
-  --phase-done: #5fbf9f;
-  --run: #8db8f0;
-  --run-bg: #1d2b3f;
-  --wait: #f0c069;
-  --wait-bg: #3a2f17;
-  --done: #5fbf9f;
-  --done-bg: #183028;
-  --fail: #f0948b;
-  --fail-bg: #3d1f1c;
-  --focus: #8db8f0;
 }
 * { box-sizing: border-box; }
 body {
@@ -142,13 +123,13 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12.5px; text-align: c
 <main>
   <header>
     <h1>cc10x builds</h1>
-    <span class="note" id="mode-note"></span>
+    <span class="note" id="mode-note" role="status"></span>
   </header>
   <div role="tablist" aria-label="Workflows">
-    <button type="button" role="tab" id="tab-active" aria-controls="panel" aria-selected="true">Active</button>
-    <button type="button" role="tab" id="tab-history" aria-controls="panel" aria-selected="false">History</button>
+    <button type="button" role="tab" id="tab-active" aria-controls="panel" aria-selected="true" tabindex="0">Active</button>
+    <button type="button" role="tab" id="tab-history" aria-controls="panel" aria-selected="false" tabindex="-1">History</button>
   </div>
-  <section id="panel" role="tabpanel" aria-live="polite">
+  <section id="panel" role="tabpanel" aria-labelledby="tab-active">
     <div class="state"><strong>loading builds</strong>waiting for the board</div>
   </section>
   <footer>showing the 500 most recently updated workflows</footer>
@@ -235,12 +216,14 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12.5px; text-align: c
   const ACTIVE = new Set(["running", "waiting"]);
   const STATUSES = new Set(["running", "waiting", "done", "failed"]);
   const panel = document.getElementById("panel");
+  const note = document.getElementById("mode-note");
   const tabs = {
     active: document.getElementById("tab-active"),
     history: document.getElementById("tab-history"),
   };
   let current = "active";
   let docs = null; // null until the first delivery
+  const opened = Object.create(null); // wf -> drill-down open, kept across snapshots
 
   function el(tag, cls, text) {
     const node = document.createElement(tag);
@@ -259,6 +242,17 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12.5px; text-align: c
   }
   function unavailable() {
     if (docs === null) showState("board unavailable", "the builds database cannot be reached from this view");
+  }
+  // The 10 s timer: nothing yet means unavailable; a cached view means it may be stale.
+  function stale() {
+    if (docs === null) unavailable();
+    else note.textContent = "may be out of date";
+  }
+  function down(log, e) {
+    log("cc10x board unavailable:", (e && e.code) || "", (e && e.message) || "", e);
+    docs = null;
+    render();
+    showState("board unavailable", "the builds database cannot be reached from this view");
   }
 
   function duration(doc) {
@@ -331,12 +325,16 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12.5px; text-align: c
   function row(doc, active) {
     const li = el("li", "row");
     const details = el("details");
+    const wf = str(doc.wf);
+    details.dataset.wf = wf;
+    details.open = !!opened[wf];
+    details.addEventListener("toggle", () => { opened[wf] = details.open; });
     const summary = el("summary");
     const top = el("div", "top");
     const where = el("span", "where");
     const phases = list(doc.phases);
     if (active) {
-      where.append(document.createTextNode(str(doc.repo)));
+      where.append(document.createTextNode(str(doc.repo) || str(doc.wf)));
       if (str(doc.branch)) where.append(el("span", "branch", " " + str(doc.branch)));
     } else {
       where.textContent = str(doc.wf);
@@ -373,8 +371,16 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12.5px; text-align: c
   }
 
   function render() {
-    for (const [name, tab] of Object.entries(tabs)) tab.setAttribute("aria-selected", String(name === current));
-    if (docs === null) return;
+    for (const [name, tab] of Object.entries(tabs)) {
+      tab.setAttribute("aria-selected", String(name === current));
+      tab.tabIndex = name === current ? 0 : -1;
+    }
+    panel.setAttribute("aria-labelledby", tabs[current].id);
+    if (docs === null) {
+      tabs.active.textContent = "Active";
+      tabs.history.textContent = "History";
+      return;
+    }
     const activeDocs = docs.filter((d) => ACTIVE.has(d.status));
     const historyDocs = docs.filter((d) => !ACTIVE.has(d.status));
     tabs.active.textContent = "Active (" + activeDocs.length + ")";
@@ -382,9 +388,14 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12.5px; text-align: c
     if (!docs.length) return showState("no cc10x workflows yet", "workflows appear here once the router pushes them");
     const shown = current === "active" ? activeDocs : historyDocs;
     if (!shown.length) return showState(current === "active" ? "no active workflows" : "no finished workflows", "");
+    const focused = document.activeElement;
+    const focusWf = focused && focused.tagName === "SUMMARY" && panel.contains(focused) ? focused.parentElement.dataset.wf : null;
     const ul = el("ul", "rows");
     for (const d of shown) ul.append(row(d, current === "active"));
     panel.replaceChildren(ul);
+    if (focusWf !== null) {
+      for (const d of ul.querySelectorAll("details")) if (d.dataset.wf === focusWf) d.firstChild.focus();
+    }
   }
 
   function setDocs(next) {
@@ -392,21 +403,33 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12.5px; text-align: c
     render();
   }
 
-  for (const [name, tab] of Object.entries(tabs)) {
-    tab.addEventListener("click", () => { current = name; render(); });
+  function select(name) {
+    current = name;
+    try { render(); } catch (e) { down(console.error, e); }
+    tabs[name].focus();
   }
+  const names = Object.keys(tabs);
+  for (const name of names) tabs[name].addEventListener("click", () => select(name));
+  document.querySelector('[role="tablist"]').addEventListener("keydown", (e) => {
+    const i = names.indexOf(current);
+    const next = { ArrowRight: i + 1, ArrowLeft: i - 1 + names.length, Home: 0, End: names.length - 1 }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    select(names[next % names.length]);
+  });
 
   async function start() {
     if (location.hash === "#demo") {
-      document.getElementById("mode-note").textContent = "demo data";
+      note.textContent = "demo data";
       setDocs(JSON.parse(document.getElementById("demo-data").textContent));
       return;
     }
-    const timer = setTimeout(unavailable, 10000);
+    const timer = setTimeout(stale, 10000);
     let db = null;
     try {
       db = window.claude && typeof window.claude.use === "function" ? await window.claude.use("db") : null;
     } catch (e) {
+      console.warn("cc10x board: db unavailable:", (e && e.code) || "", (e && e.message) || "");
       db = null;
     }
     if (!db) {
@@ -415,20 +438,28 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12.5px; text-align: c
     }
     db.collection("builds").orderBy("updated_at", "desc").limit(500).onSnapshot(
       (snap) => {
-        clearTimeout(timer);
-        setDocs(snap.docs.map((s) => Object.assign({ wf: s.id }, s.data())));
+        try {
+          setDocs(snap.docs.map((s) => Object.assign({ wf: s.id }, s.data())));
+        } catch (e) {
+          return down(console.error, e);
+        }
+        // A cached copy keeps the timer running: only the store's own answer proves the view live.
+        if (!snap.metadata.fromCache) {
+          clearTimeout(timer);
+          note.textContent = "";
+        }
       },
-      () => {
+      (e) => {
         // Any terminal error (resource_exhausted, quota_exceeded, revoked, ...) ends the listener.
         clearTimeout(timer);
-        docs = null;
-        unavailable();
+        note.textContent = "";
+        down(console.warn, e);
       },
     );
   }
 
   render();
-  start();
+  start().catch((e) => down(console.error, e));
 })();
 </script>
 </body>
