@@ -24,12 +24,12 @@ WF = "wf-20261123T000000Z-board-test"
 
 # IF-2, pinned here on purpose (not imported from the tool).
 IF2_KEYS = [
-    "wf", "type", "repo", "branch", "session_tag", "request", "phases",
+    "wf", "type", "repo", "branch", "ticket", "session_tag", "request", "phases",
     "fix_cycles", "finish_fix_cycles", "cursor", "pending_gate", "breaker",
     "deferred", "plan_file", "design_file", "status", "created_at",
     "updated_at", "synced_at",
 ]
-MAIN_ONLY_KEYS = {"repo", "branch", "session_tag", "synced_at"}
+MAIN_ONLY_KEYS = {"repo", "branch", "ticket", "session_tag", "synced_at"}
 
 
 def load_tool():
@@ -188,7 +188,7 @@ def pushed_line(tmp: Path) -> None:
     assert (r.returncode, r.stderr) == (0, ""), r
     assert r.stdout == f"BOARD_DOC: builds {WF} {expected}\n", r.stdout
     snap = load_snapshot(expected)
-    assert list(snap) == IF2_KEYS and len(snap) == 19, list(snap)
+    assert list(snap) == IF2_KEYS and len(snap) == 20, list(snap)
     assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", snap["synced_at"]), snap["synced_at"]
     assert snap["session_tag"] == "s1" and snap["wf"] == WF and snap["type"] == "build"
     assert snap["phases"] == [
@@ -348,6 +348,56 @@ def no_git_repo(tmp: Path) -> None:
         assert (snap["repo"], snap["branch"]) == ("proj", "board-test"), snap
 
 
+def git_branch_state(tmp: Path, artifact: dict, branch: str) -> Path | None:
+    """A state root whose checkout is a real git repo on `branch`; None without git."""
+    git = shutil.which("git")
+    if not git:
+        return None
+    path = write_state(tmp, artifact)
+    repo = tmp / "proj"
+    for cmd in (["init", "-q"], ["-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "x"], ["checkout", "-q", "-B", branch]):
+        subprocess.run([git, "-C", str(repo), *cmd], check=True, capture_output=True)
+    return path
+
+
+def ticket_key_from_branch(tmp: Path) -> None:
+    path = git_branch_state(tmp, base_artifact(user_request="ENG-1"), "feat/eng-9-x")
+    if path is None:
+        return
+    snap = load_snapshot(read_doc(run_cli(tmp, path).stdout)[1])
+    assert (snap["branch"], snap["ticket"]) == ("feat/eng-9-x", "ENG-9"), snap
+
+
+def ticket_key_from_request(tmp: Path) -> None:
+    # no git checkout: branch null, the ticket comes from the full request (past the 160 cut too)
+    path = write_state(tmp, base_artifact(user_request="fix ENG-3"))
+    snap = load_snapshot(read_doc(run_cli(tmp, path).stdout)[1])
+    assert (snap["branch"], snap["ticket"]) == (None, "ENG-3"), snap
+    sub = tmp / "long"
+    path = write_state(sub, base_artifact(user_request="a " * 100 + "ENG-77"))
+    snap = load_snapshot(read_doc(run_cli(sub, path).stdout)[1])
+    assert snap["ticket"] == "ENG-77" and "ENG-77" not in snap["request"], snap
+
+
+def ticket_key_none(tmp: Path) -> None:
+    path = git_branch_state(tmp, base_artifact(user_request=None), "main")
+    if path is None:
+        path = write_state(tmp, base_artifact(user_request=None))
+    snap = load_snapshot(read_doc(run_cli(tmp, path).stdout)[1])
+    assert snap["ticket"] is None and list(snap) == IF2_KEYS, snap
+
+
+def old_doc_unchanged_rule(tmp: Path) -> None:
+    # a snapshot written before `ticket` existed is a change, rewritten once with the key
+    path = write_state(tmp, base_artifact())
+    target = read_doc(run_cli(tmp, path).stdout)[1]
+    old = {k: v for k, v in load_snapshot(target).items() if k != "ticket"}
+    target.write_text(json.dumps(old, indent=2) + "\n", encoding="utf-8")
+    r = run_cli(tmp, path)
+    assert load_snapshot(read_doc(r.stdout)[1])["ticket"] is None
+    assert run_cli(tmp, path).stdout == "BOARD: unchanged\n"
+
+
 def atomic_write(tmp: Path) -> None:
     src = TOOL.read_text(encoding="utf-8")
     assert "os.replace(" in src, "snapshot must be written via a temp file plus os.replace"
@@ -364,7 +414,28 @@ def help_runs(tmp: Path) -> None:
     assert r.returncode == 0 and "--check" in r.stdout and "Traceback" not in r.stderr, r
 
 
-# ---- snapshot() seam -------------------------------------------------------
+# ---- snapshot() and ticket_of() seams ---------------------------------------
+
+# IF-3 shared vectors, pinned verbatim (clutch tools/ops_sync/test_ops_sync.py holds the same table).
+TICKET_VECTORS = [
+    ("V1", ["feat/eng-2048-slice-b"], [], "ENG-2048"),
+    ("V2", ["eng-2119"], ["merge queue of ENG-2127"], "ENG-2119"),
+    ("V3", ["main"], ["re-review of ENG-2127 and OPS-676"], "ENG-2127"),
+    ("V4", ["projects"], ["utf-8 and eng-12 in lower case"], None),
+    ("V5", [], ["SHA-256 pin, then ENG-7"], "ENG-7"),
+    ("V6", ["fix/utf-8-bug"], [], None),
+    ("V7", [None, "eng-5"], [None], "ENG-5"),
+    ("V8", ["claude/zen-bassi-1a2b"], ["build2ENG-12 and ENG-1234567"], None),
+    ("V9", [], ["(ENG-42)."], "ENG-42"),
+    ("V10", [], [], None),
+]
+
+
+def ticket_vectors(tmp: Path) -> None:
+    tool = load_tool()
+    for vid, slugs, texts, expected in TICKET_VECTORS:
+        assert tool.ticket_of(slugs, texts) == expected, (vid, tool.ticket_of(slugs, texts))
+
 
 
 def unit_keys(tmp: Path) -> None:
@@ -475,6 +546,8 @@ CASES = [
     failed_write_tmp, space_in_path, relative_doc_paths, no_git_repo,
     atomic_write, no_delete_path, help_runs, unit_keys, real_shape_counts,
     finish_rounds, breaker_states, status_states, deferred_buckets, request_truncated,
+    ticket_vectors, ticket_key_from_branch, ticket_key_from_request, ticket_key_none,
+    old_doc_unchanged_rule,
 ]
 
 

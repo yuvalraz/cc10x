@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -23,6 +24,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from cc10x_hooklib import SAFE_WORKFLOW_ID, board_config, git_checkout_root  # noqa: E402
 
 FINISH_PHASE = "build-finish"
+
+# IF-3 ticket rule, defined identically in clutch tools/ops_sync/ops_sync.py.
+SLUG_RE = re.compile(r"(?<![A-Za-z0-9])([A-Za-z]{2,6})-([0-9]{1,6})(?![A-Za-z0-9])")
+TEXT_RE = re.compile(r"(?<![A-Za-z0-9])([A-Z]{2,6})-([0-9]{1,6})(?![A-Za-z0-9])")
+NOT_TICKETS = ("CVE", "GPT", "HTTP", "ISO", "PEP", "RFC", "SHA", "UTF")
 
 
 def _str(value: Any) -> str | None:
@@ -38,8 +44,21 @@ def _marker(entry: Any) -> str | None:
     return _str(entry.get("event")) if isinstance(entry, dict) else _str(entry)
 
 
+def ticket_of(slugs: list, texts: list) -> str | None:
+    """The first ticket in the slugs (any case), then in the texts (upper case only)."""
+    for values, pattern in ((slugs, SLUG_RE), (texts, TEXT_RE)):
+        for value in values:
+            if not isinstance(value, str):
+                continue
+            for m in pattern.finditer(value):
+                prefix = m.group(1).upper()
+                if prefix not in NOT_TICKETS:
+                    return f"{prefix}-{m.group(2)}"
+    return None
+
+
 def snapshot(artifact: dict, events: list[dict]) -> dict:
-    """Every IF-2 key except repo, branch, session_tag and synced_at."""
+    """Every IF-2 key except repo, branch, ticket, session_tag and synced_at."""
     phase_dicts = [p for p in _list(artifact.get("normalized_phases")) if isinstance(p, dict)]
     ids = [_str(p.get("phase_id")) or _str(p.get("id")) for p in phase_dicts]
     known = {i for i in ids if i}
@@ -220,11 +239,13 @@ def main(argv: list[str] | None = None) -> int:
         return _fail("unsafe workflow id")
     state = artifact_path.parent.parent
     root = git_checkout_root(artifact_path.parent)
+    branch = _branch(root)
     doc = {
         "wf": wf,
         "type": snap["type"],
         "repo": root.name if root is not None else state.parent.name,
-        "branch": _branch(root),
+        "branch": branch,
+        "ticket": ticket_of([branch], [_str(artifact.get("user_request"))]),
         "session_tag": args.session_tag,
         **{k: v for k, v in snap.items() if k not in ("wf", "type")},
         "plan_file": _doc_path(snap["plan_file"], root),
