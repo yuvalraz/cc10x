@@ -82,6 +82,9 @@ Rules:
   - `octocode_available`
   - `websearch_available`
   - `webfetch_available`
+  - `board_url` (optional): the build board URL this workflow pushes to, set before its first push and kept for the workflow's life (`SKILL.md` §2a `### Build board (optional)`); absent, null or not a non-empty string means none recorded yet
+  - `board_version` (optional): the `version` of this workflow's board document after the last successful `set`; absent means none recorded, and the router's conflict recovery finds it
+  - `board_push_failed` (optional): a one-line reason the build board failed for this workflow, written at once in an artifact write that changes only `capabilities` and `updated_at` (also after `memory_finalized` or `workflow_failed`); set means the board is off for it; a board failure is never written to `status_history` or the events log
 - `results.research` must be structured as `web`, `github`, and `synthesis`.
 - `results.disputes_in_flight` is the router-written list of disputed REM-FIX findings, one `{cycle_number, position, finding, ruling}` entry per `FINDING_DISPUTED` position, `ruling` null until the verifier adjudicates it (`remediation-and-research.md`, Re-review precondition gate).
 - `intent` stores the durable spec header for the workflow:
@@ -216,7 +219,7 @@ Workflow event log:
 Hook policy:
 
 - CC10X plugin hooks live in the plugin bundle under `hooks/hooks.json` and should stay minimal:
-  - `SessionStart` for resume context (fires on startup|resume|clear|compact|fork)
+  - `SessionStart` for resume context and the optional build board line (fires on startup|resume|clear|compact|fork)
   - `PostToolUse` for workflow artifact integrity audit (`cc10x_posttooluse_artifact_guard.py`)
   - `PostCompact` for compaction event capture in workflow event log (audit only)
   - `SubagentStop` for agent contract presence audit (hook log, telemetry only)

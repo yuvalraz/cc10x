@@ -211,7 +211,7 @@ Validated against the live plugin surface:
 **Covers:** Router `## 2a. Workflow Artifact And Hook Policy`, `references/workflow-artifact-and-hook-policy.md`, plugin hooks
 **Enforces:** `hooks.json` registers eight events, and every hook stays an artifact check, an audit, a context injection or a state snapshot, never a second orchestrator. No hook gates git or file operations; Claude Code's permission settings do. `plugins/cc10x/hooks/README.md` lists each hook once and is the maintained table:
 
-- `SessionStart`: the Python preflight and resume-context injection
+- `SessionStart`: the Python preflight, resume-context injection and the optional build board line
 - `PostToolUse`: workflow artifact integrity (`artifactIntegrity`, ships as block) and Bash workflow-write audit
 - `PostCompact`, `SubagentStop`, `StopFailure`, `InstructionsLoaded`: audit logging
 - `PreCompact`, `Stop`: workflow state snapshots
