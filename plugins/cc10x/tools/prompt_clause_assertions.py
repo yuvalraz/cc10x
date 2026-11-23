@@ -571,8 +571,8 @@ ROUTER_BOARD_ON = (
     " and an artifact written before the board existed resumes and syncs the same way."
 )
 ROUTER_BOARD_PUSH = (
-    "- With the board on, after each artifact write that appends `workflow_started`, `phase_started`, `remediation_created`,"
-    " `memory_finalized` or `workflow_failed`, or sets or clears `pending_gate`, run"
+    "- With the board on, after the artifact write that starts the workflow, and after each write that appends"
+    " `phase_started`, `remediation_created`, `memory_finalized` or `workflow_failed`, or sets or clears `pending_gate`, run"
     ' `python3 "${CLAUDE_PLUGIN_ROOT}/tools/board_sync.py" .cc10x/workflows/{workflow_uuid}.json`. On a'
     " `BOARD_DOC: <collection> <doc_id> <file_path> [if_version=<n>]` line, call `ArtifactData` (load it first when it is a"
     " deferred tool) with action `set`, `url` set to `capabilities.board_url`, `collection`, `doc_id` and `file_path` taken"
