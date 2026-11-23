@@ -378,6 +378,28 @@ They are separate systems and neither replaces the other.
 
 Use auto-memory for preferences that follow you across projects, and `.cc10x/` for what one project's workflows need to resume. Keep `.cc10x/` out of git, as above.
 
+### Live build board (optional)
+
+The build board is a page that lists your cc10x workflows and keeps them current: type, request, phase, each phase's status and fix cycles, any open gate, deferred findings, and the plan and design files. It is off by default, and with it off cc10x behaves exactly as before.
+
+**Set it up once:**
+
+1. Publish the page. Ask Claude to publish `plugins/cc10x/templates/build-board.html` as a private artifact with a database the page reads and only you write: `capabilities: {db: {rules: [{path: "builds", read: "view", write: "owner"}]}}`. Note the artifact URL. Open it: it says "no cc10x workflows yet". To preview the layout with sample rows, add `#demo` to the URL.
+2. Point cc10x at it. Write `~/.cc10x/board.json` as `{"url": "https://..."}`, or set `CC10X_BOARD_URL` (when set, it decides alone, and an empty value turns the board off). Only a one-line `https://` URL counts.
+3. Check it. Run `python3 plugins/cc10x/tools/board_sync.py --check`. It prints `BOARD: <url>`, or `BOARD: off` plus the reason a configured value was rejected. New sessions then show a `CC10X build board: <url>` line.
+
+**What the router does when it is on:**
+
+- Each workflow is one document, `builds/<workflow_uuid>`. At each workflow milestone (start, each phase, each fix cycle, each open or closed gate, and the end), the router runs `board_sync.py`, which writes a snapshot under `.cc10x/board/`, and then saves it to the board with `ArtifactData`. The first save creates the document; later saves update it in place with `if_version`, and an unchanged snapshot is not sent again. When a save is refused, the router reads the document once and retries once with its current version.
+- A workflow keeps the board URL it started with, stored in its artifact as `capabilities.board_url`; pointing `board.json` at a new board affects new workflows only.
+- The plan and design file paths go to the board relative to the git checkout root, or as a bare file name when they sit outside it.
+- When a save fails, the router records the reason as `capabilities.board_push_failed`, stops updating the board for that workflow, and tells you in one line of its reply. It adds nothing to `status_history` or the events log, and the workflow carries on.
+- A checkout whose path contains a space cannot use the board: `board_sync.py` refuses a snapshot path with whitespace, so the board turns off for that workflow.
+
+**Limits:** one board holds 25,000 workflows, and the page shows the 500 most recently updated. The board never blocks a workflow, and nothing in cc10x deletes a board document.
+
+**If no board line appears:** run `python3 plugins/cc10x/tools/board_sync.py --check` and read the reason it prints.
+
 ---
 
 ## Optional MCP Integrations
@@ -704,7 +726,7 @@ The plugin ships these Claude Code-native hooks, registered in `plugins/cc10x/ho
 
 | Hook | Purpose |
 | ------ | --------- |
-| `SessionStart` | Python preflight, then rehydrate workflow context after restart or compaction |
+| `SessionStart` | Python preflight, then rehydrate workflow context after restart or compaction, and name the build board when one is configured |
 | `PostToolUse` | Audit workflow artifact integrity after writes (blocks a malformed artifact by default) |
 | `PostCompact` | Capture compaction events for workflow telemetry |
 | `SubagentStop` | Audit subagent outputs for required contract markers |
@@ -782,9 +804,10 @@ plugins/cc10x/
 │   ├── cc10x_{event_logger,hooklib,posttooluse_artifact_guard,sessionstart_context,state_persist}.py
 │   └── cc10x_preflight.sh
 ├── tools/
-│   ├── {doc_consistency_check,fixture_registry,harness_audit,latency_audit,live_harness_runner,phase_brief,preload_probe,prompt_clause_assertions,release_gate,review_package,token_usage_report,workflow_replay_check}.py
+│   ├── {board_sync,doc_consistency_check,fixture_registry,harness_audit,latency_audit,live_harness_runner,phase_brief,preload_probe,prompt_clause_assertions,release_gate,review_package,token_usage_report,workflow_replay_check}.py
 │   └── docs_rot_baseline.json
 ├── templates/
+│   ├── build-board.html
 │   ├── {coverage-thresholds,live-harness.template}.json
 │   └── {doc-target-overlay,qa-env-plan.template,qa-feature-map.template,qa-report.template,qa-setup.template,qa-test-plan.template,qa-topology.template}.md
 ├── tests/
