@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from cc10x_hooklib import (
+    board_config,
     load_input,
     log_event,
     log_unreadable_artifact,
@@ -13,6 +14,8 @@ from cc10x_hooklib import (
 def main() -> int:
     data = load_input()
     source = data.get("source", "startup")
+    url, _ = board_config()
+    board_line = f"\nCC10X build board: {url}" if url else ""
     payload, path, parse_error = read_live_workflow_state()
     if parse_error and path is not None:
         log_unreadable_artifact(path, parse_error)
@@ -20,10 +23,12 @@ def main() -> int:
             f"CC10X workflow context ({source}): an unreadable workflow artifact "
             f"{path.name} ({parse_error}) was found and no live workflow could be "
             "read; its state cannot be trusted, so inspect or repair that file "
-            "before resuming."
+            f"before resuming.{board_line}"
         )
         return 0
     if not payload:
+        if url:
+            session_context(f"CC10X build board: {url}")
         return 0
 
     pending = payload.get("pending_gate") or "none"
@@ -57,6 +62,7 @@ def main() -> int:
         f"phase_cursor={payload.get('phase_cursor') or 'none'} "
         f"{research_field} pending_gate={pending} "
         f"incomplete_phases={', '.join(incomplete) if incomplete else 'none'}."
+        f"{board_line}"
     )
     log_event(
         "plugin_sessionstart_context",

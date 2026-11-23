@@ -25,7 +25,7 @@ Each hook in `hooks.json` appears exactly once in this table (a validator in
 | Event (matcher) | Hook | What it does | Blocks or audits |
 | --- | --- | --- | --- |
 | `SessionStart` (`startup\|resume\|clear\|compact\|fork`) | `cc10x_preflight.sh` | Tells the agent when `python3` is missing or older than 3.9 | Context only; always exits 0 |
-| `SessionStart` (same matcher) | `cc10x_sessionstart_context.py` | Injects resume context for the newest workflow that is not finished | Context only |
+| `SessionStart` (same matcher) | `cc10x_sessionstart_context.py` | Injects resume context for the newest workflow that is not finished, and the build board URL when one is configured | Context only |
 | `PostToolUse` (`Edit\|Write\|Bash`) | `cc10x_posttooluse_artifact_guard.py` | Validates a workflow artifact right after it is written; audits other writes; logs a `bash_workflow_write` event when a Bash command writes into `.cc10x/workflows/` | Exit 2 only for a malformed artifact when `artifactIntegrity` is `"block"` (the shipped default); everything else audits |
 | `PostCompact` | `cc10x_event_logger.py postcompact` | Records the compaction in the hook log and the workflow event log | Audit |
 | `SubagentStop` | `cc10x_event_logger.py subagent_stop` | Logs whether a `cc10x:*` agent returned a contract; reads the final message, and the SubagentHandback report from the transcript when the final message has none (`report_source` records which) | Audit |
@@ -68,13 +68,19 @@ not finished (the later of the last `status_history` entry and the newest
 router-written events-log record decides when both carry a timestamp; otherwise a
 terminal `memory_finalized`, `workflow_completed` or `workflow_failed` in either
 counts; a completed `memory-finalize` phase also counts); with only finished
-workflows nothing is injected. Only files named like a workflow id (`wf-...json`)
+workflows no resume context is injected. Only files named like a workflow id (`wf-...json`)
 are artifacts. JSON that is not an object (`[]`, `5`, `null`) is an unreadable
 artifact. An unreadable artifact newer than a live one is logged
 (`workflow_artifact_unreadable`) and skipped; when no live workflow can be read,
 SessionStart says so in one line naming the unreadable artifact. Without
 `CLAUDE_PROJECT_DIR` the project root is the checkout root containing the session
 `cwd`, and a relative hook-input `cwd` is made absolute.
+
+With a build board configured, the context ends with the line
+`CC10X build board: <url>`, also when no workflow is live. The URL comes from
+`CC10X_BOARD_URL` when it is set (an empty value turns the board off), else from
+`$HOME/.cc10x/board.json` (`{"url": "https://..."}`). Only a one-line
+printable-ASCII `https://` URL counts; with no board nothing is added.
 
 ## Internal Publication Audit
 

@@ -233,6 +233,173 @@ def test_sessionstart_tells_the_model_when_the_newest_artifact_is_unreadable(tmp
     assert events[0]["path"].endswith("wf-corrupt.json")
 
 
+# --- SessionStart build board line (P2) --------------------------------------
+# The default runners omit HOME, so a real ~/.cc10x/board.json never leaks in;
+# these tests set HOME or CC10X_BOARD_URL themselves.
+
+BOARD_URL = "https://claude.ai/public/artifacts/board-123"
+
+
+def board_home(tmp_path: Path, content: str | None) -> Path:
+    """A HOME dir; with content, its .cc10x/board.json holds that text."""
+    home = tmp_path / "home"
+    (home / ".cc10x").mkdir(parents=True, exist_ok=True)
+    if content is not None:
+        (home / ".cc10x" / "board.json").write_text(content)
+    return home
+
+
+def sessionstart_stdout(project: Path, source: str = "startup", env: dict[str, str] | None = None) -> str:
+    r = run_guard("cc10x_sessionstart_context.py", {"source": source}, project, extra_env=env)
+    assert r.returncode == 0, r.stderr
+    return r.stdout
+
+
+def context_of(stdout: str) -> str:
+    return json.loads(stdout)["hookSpecificOutput"]["additionalContext"]
+
+
+def test_sessionstart_board_line_without_workflow(tmp_path):
+    home = board_home(tmp_path, json.dumps({"url": BOARD_URL}))
+    project = tmp_path / "project"
+    project.mkdir()
+    out = sessionstart_stdout(project, env={"HOME": str(home)})
+    assert context_of(out) == f"CC10X build board: {BOARD_URL}"
+    out = sessionstart_stdout(project, env={"CC10X_BOARD_URL": BOARD_URL})
+    assert context_of(out) == f"CC10X build board: {BOARD_URL}"
+
+
+def test_sessionstart_board_line_appended_to_workflow_context(tmp_path):
+    live = tmp_path / "live"
+    write_artifact(live, phase_status={"phase-1": "in_progress"})
+    for source in ("resume", "compact"):
+        off = context_of(sessionstart_stdout(live, source))
+        on = context_of(sessionstart_stdout(live, source, {"CC10X_BOARD_URL": BOARD_URL}))
+        assert "wf=wf-test" in off
+        assert on == f"{off}\nCC10X build board: {BOARD_URL}"
+    broken = tmp_path / "broken"
+    (broken / ".cc10x" / "workflows").mkdir(parents=True)
+    (broken / ".cc10x" / "workflows" / "wf-corrupt.json").write_text("{not json")
+    off = context_of(sessionstart_stdout(broken))
+    on = context_of(sessionstart_stdout(broken, env={"CC10X_BOARD_URL": BOARD_URL}))
+    assert "unreadable" in off
+    assert on == f"{off}\nCC10X build board: {BOARD_URL}"
+
+
+def test_sessionstart_board_off_output_unchanged(tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    live = tmp_path / "live"
+    write_artifact(live, phase_status={"phase-1": "in_progress"})
+    baseline = sessionstart_stdout(live, "resume")
+    assert baseline.strip()
+    for name, content in (("missing", None), ("broken", "{not json")):
+        home = board_home(tmp_path / name, content)
+        assert sessionstart_stdout(empty, env={"HOME": str(home)}) == "", name
+        assert sessionstart_stdout(live, "resume", {"HOME": str(home)}) == baseline, name
+
+
+def test_sessionstart_empty_board_env_turns_board_off(tmp_path):
+    home = board_home(tmp_path, json.dumps({"url": BOARD_URL}))
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    live = tmp_path / "live"
+    write_artifact(live, phase_status={"phase-1": "in_progress"})
+    baseline = sessionstart_stdout(live, "resume")
+    env = {"HOME": str(home), "CC10X_BOARD_URL": ""}
+    assert sessionstart_stdout(empty, env=env) == ""
+    assert sessionstart_stdout(live, "resume", env) == baseline
+
+
+def test_sessionstart_rejects_unsafe_board_env(tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    live = tmp_path / "live"
+    write_artifact(live, phase_status={"phase-1": "in_progress"})
+    baseline = sessionstart_stdout(live, "resume")
+    for value in ("http://x", "https://a\nb"):
+        env = {"CC10X_BOARD_URL": value}
+        assert sessionstart_stdout(empty, env=env) == "", value
+        assert sessionstart_stdout(live, "resume", env) == baseline, value
+
+
+SKELETON_PATH = PLUGIN_ROOT / "skills" / "cc10x-router" / "references" / "workflow-artifact.skeleton.json"
+
+
+def test_skeleton_has_no_board_keys(tmp_path):
+    capabilities = json.loads(SKELETON_PATH.read_text())["capabilities"]
+    assert "board_url" not in capabilities
+    assert "board_version" not in capabilities
+    assert "board_push_failed" not in capabilities
+
+
+def test_artifact_with_board_keys_passes_replay_check(tmp_path):
+    text = SKELETON_PATH.read_text()
+    for placeholder, value in (
+        ("__WORKFLOW_UUID__", "wf-board"),
+        ("__WORKFLOW_TYPE__", "BUILD"),
+        ("__USER_REQUEST__", "build the board"),
+        ("__ISO_TIMESTAMP__", "2026-11-23T10:00:00+00:00"),
+        ("__PHASE__", "phase-1"),
+    ):
+        text = text.replace(placeholder, value)
+    artifact = json.loads(text)
+    artifact["capabilities"].update(
+        board_url=BOARD_URL, board_version=3, board_push_failed="ArtifactData set refused twice"
+    )
+    workflows = tmp_path / ".cc10x" / "workflows"
+    workflows.mkdir(parents=True)
+    path = workflows / "wf-board.json"
+    path.write_text(json.dumps(artifact))
+    r = subprocess.run(
+        [sys.executable, str(PLUGIN_ROOT / "tools" / "workflow_replay_check.py"), "--artifact", str(path)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert r.returncode == 0, r.stderr
+    assert "artifact OK" in r.stdout
+
+
+def test_board_push_failed_keeps_finish_state(tmp_path):
+    # RP-2: a board failure is recorded only under `capabilities`, so the
+    # finished test, breaker state and resume context stay as they were.
+    hooklib = load_hooklib()
+    ts = "2026-11-23T10:00:00+00:00"
+    cases = (
+        ("finalized", {"status_history": [_stamped("memory_finalized", ts)]}, True),
+        ("failed", {"status_history": [_stamped("workflow_failed", ts)]}, True),
+        (
+            "breaker",
+            {"status_history": [_stamped("breaker_ask", ts)], "pending_gate": "phase_blocked"},
+            False,
+        ),
+    )
+    for name, fields, finished in cases:
+        original_dir = tmp_path / name / "original"
+        copy_dir = tmp_path / name / "copy"
+        original_path = write_artifact(original_dir, "wf-pair", **fields)
+        event = fields["status_history"][-1]["event"]
+        append_events(original_dir, "wf-pair", _stamped(event, ts, agent="router"))
+        original = json.loads(original_path.read_text())
+        failed = json.loads(original_path.read_text())
+        failed.setdefault("capabilities", {}).update(
+            board_url=BOARD_URL, board_version=2, board_push_failed="board_sync exited 1"
+        )
+        copy_path = write_artifact(copy_dir, "wf-pair", **failed)
+        append_events(copy_dir, "wf-pair", _stamped(event, ts, agent="router"))
+        assert json.dumps(failed["status_history"]) == json.dumps(original["status_history"]), name
+        assert hooklib.workflow_is_finished(original, original_path) is finished, name
+        assert hooklib.workflow_is_finished(failed, copy_path) is finished, name
+        out_original = sessionstart_stdout(original_dir, "resume")
+        out_copy = sessionstart_stdout(copy_dir, "resume")
+        assert out_copy == out_original, name
+        if finished:
+            assert out_original == "", name
+        else:
+            assert "pending_gate=phase_blocked" in context_of(out_original), name
+
+
 # --- cc10x_hooklib.py (mode resolution, exercised through the artifact guard) --
 
 

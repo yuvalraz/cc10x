@@ -555,6 +555,63 @@ CODE_REVIEW_DEFERRED = (
     " NOT need a separate file or a separate CONTRACT field for them."
 )
 README_PAUSE_LINE = "- when to pause for clarification"
+# Build board law (SKILL.md §2a) and its capabilities policy lines (plan P2, IF-3/IF-4, DD8/DD9/DD13).
+ROUTER_BOARD_HEADING = "### Build board (optional)"
+ROUTER_BOARD_OFF = (
+    "- The build board is on for a workflow when its artifact's `capabilities.board_push_failed` is not a non-empty string"
+    " and either its"
+    " `capabilities.board_url` is a non-empty string or the session context holds a `CC10X build board: <url>` line (the"
+    " SessionStart hook prints it only when `~/.cc10x/board.json` or `CC10X_BOARD_URL` names a valid `https://` board URL);"
+    " otherwise it is off, and the router runs no board command, makes no `ArtifactData` call and writes no board file."
+)
+ROUTER_BOARD_ON = (
+    "- When the board is on and `capabilities.board_url` is absent, null or not a non-empty string, the router sets it to"
+    " the URL from the `CC10X build board: <url>` line in its next artifact write, before the first push; the workflow then"
+    " pushes only to `capabilities.board_url`, so a later change to the configured board URL applies to new workflows only,"
+    " and an artifact written before the board existed resumes and syncs the same way."
+)
+ROUTER_BOARD_PUSH = (
+    "- With the board on, after each artifact write that appends `workflow_started`, `phase_started`, `remediation_created`,"
+    " `memory_finalized` or `workflow_failed`, or sets or clears `pending_gate`, run"
+    ' `python3 "${CLAUDE_PLUGIN_ROOT}/tools/board_sync.py" .cc10x/workflows/{workflow_uuid}.json`. On a'
+    " `BOARD_DOC: <collection> <doc_id> <file_path> [if_version=<n>]` line, call `ArtifactData` (load it first when it is a"
+    " deferred tool) with action `set`, `url` set to `capabilities.board_url`, `collection`, `doc_id` and `file_path` taken"
+    " from that line, and `if_version` only when the line ends with `if_version=<n>`; on `BOARD: unchanged` or"
+    " `BOARD: off`, make no call."
+)
+ROUTER_BOARD_VERSION = (
+    "- After a `set` succeeds, the router stores the `version` it returns in `capabilities.board_version` in its next"
+    " artifact write."
+)
+ROUTER_BOARD_CONFLICT = (
+    "- When a `set` is refused, call `ArtifactData` `get` on that document once; when the document exists, retry the `set`"
+    " once with `if_version` set to its `version`."
+)
+ROUTER_BOARD_FAILURE = (
+    "- A board failure (board_sync exits non-zero or exits 0 with any other output, `ArtifactData` cannot be loaded, a"
+    " successful `set`, or a `get` that finds the document, returns no `version`, the `get` fails or finds no document, or the retried `set` fails) is recorded at once as `capabilities.board_push_failed` with a one-line reason, which"
+    " turns the board off for that workflow; that artifact write changes only `capabilities` and `updated_at` and is"
+    " allowed after `memory_finalized` or `workflow_failed`. The router also tells the user, in one line of its reply,"
+    " that the board stopped updating for this workflow and why; that line is a reply only, with no `status_history`"
+    " entry, gate or question. No board step appends anything to `status_history` or the"
+    " events log, a board failure never blocks or fails a workflow, and the router never deletes a board document."
+)
+POLICY_BOARD_URL = (
+    "  - `board_url` (optional): the build board URL this workflow pushes to, set before its first push and kept for the"
+    " workflow's life (`SKILL.md` §2a `### Build board (optional)`); absent, null or not a non-empty string means none"
+    " recorded yet"
+)
+POLICY_BOARD_VERSION = (
+    "  - `board_version` (optional): the `version` of this workflow's board document after the last successful `set`;"
+    " absent means none recorded, and the router's conflict recovery finds it"
+)
+POLICY_BOARD_FAILED = (
+    "  - `board_push_failed` (optional): a one-line reason the build board failed for this workflow, written at once in an"
+    " artifact write that changes only `capabilities` and `updated_at` (also after `memory_finalized` or"
+    " `workflow_failed`) and named to the user in one line of the router's reply; a non-empty string means the board is"
+    " off for it; a board failure is never written to `status_history` or the"
+    " events log"
+)
 INV005_HEADING = "### INV-005: Every BUILD REM-FIX takes the whole blocking set"
 
 
@@ -5722,6 +5779,29 @@ ASSERTIONS = [
         lambda text: "`DIFF_DRIVEN_DOCS: skip` to the `## Session Settings` section of `activeContext.md`" in text
         and "`DIFF_DRIVEN_DOCS: skip` to the `## Session Settings` section of `CLAUDE.md`" not in text,
         "the skill said CLAUDE.md; the router reads activeContext.md ## Session Settings",
+    ),
+    A(
+        "router: the build board law (off rule, URL pin, push points, version, conflict recovery, failure record)",
+        SKILLS / "cc10x-router" / "SKILL.md",
+        lambda text: all(
+            pinned_line(text, line)
+            for line in (
+                ROUTER_BOARD_HEADING,
+                ROUTER_BOARD_OFF,
+                ROUTER_BOARD_ON,
+                ROUTER_BOARD_PUSH,
+                ROUTER_BOARD_VERSION,
+                ROUTER_BOARD_CONFLICT,
+                ROUTER_BOARD_FAILURE,
+            )
+        ),
+        "with no board nothing runs; a board failure lives only under capabilities and never touches status_history or the events log",
+    ),
+    A(
+        "policy: capabilities lists the optional board_url, board_version and board_push_failed keys",
+        POLICY_REF,
+        lambda text: all(pinned_line(text, line) for line in (POLICY_BOARD_URL, POLICY_BOARD_VERSION, POLICY_BOARD_FAILED)),
+        "the artifact keys the board law writes are documented where the schema lives",
     ),
     *[
         A(
